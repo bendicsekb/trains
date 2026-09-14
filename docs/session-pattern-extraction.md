@@ -4,7 +4,20 @@ This document explains how to execute `session-pattern-extraction.yaml`. It is i
 
 ## Corpus preflight
 
-Before Pi interprets a corpus, run `scripts/build-session-corpus-index.mjs` once against every declared session root. The index is the default input for discovery and contains structural metadata and hashes, not copied transcript text. This keeps a multi-gigabyte corpus out of one model context and makes the snapshot auditable. Pi may inspect source transcripts only through bounded, allowlisted reads selected from the index.
+Before Pi interprets a corpus, run `scripts/build-session-corpus-index.mjs` once against every declared session root. The index is the default input for discovery and contains structural metadata and hashes, not copied transcript text. This keeps a multi-gigabyte corpus out of one model context and makes the snapshot auditable. The first Pi train run is structural-only; semantic raw-session access is a separate experiment that requires its own bounded, allowlisted contract.
+
+## Pi execution and context boundaries
+
+The workflow is executed as a chain of trains, not as one long Pi conversation. Each stage starts a new supervised Pi RPC process with `--no-session` and its own run contract and event ledger:
+
+1. identify sessions;
+2. extract workflow patterns;
+3. define the candidate train;
+4. backtest;
+5. compare and adjust;
+6. decide whether to loop or freeze.
+
+The only state that crosses the boundary is the previous stage's declared JSON handoff plus the source artifacts explicitly listed in the next contract. A stage must not read another stage's events, contract, handoff, or private reasoning. The handoff records decisions, evidence references, unknowns, claims not made, and the next route. Stages 4–6 repeat with fresh contexts until the convergence handoff returns a terminal status.
 
 ## What counts as a useful extraction
 

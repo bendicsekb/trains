@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-contract=/home/bendi/trains/.factory/runs/session-pattern-extraction-full-3-20260914/contract.json
-runner=/home/bendi/trains/scripts/run-session-pattern-extraction.mjs
+contract=/home/bendi/trains/.factory/runs/session-pattern-extraction-full-4-20260914/contract.json
+runner=/home/bendi/trains/scripts/run-session-pattern-extraction-chain.mjs
 node=/home/bendi/.nvm/versions/node/v22.22.0/bin/node
 slot=$(date -u +%Y-%m-%dT%H:%M)
 idempotency_key="trains-session-pattern-extraction:${slot}"
@@ -12,7 +12,7 @@ if [[ ! -f "$contract" ]]; then
   exit 1
 fi
 
-params=$(printf '%s' "{\"argv\":[\"$node\",\"$runner\",\"--contract\",\"$contract\",\"--stall-ms\",\"300000\",\"--max-runtime-ms\",\"21600000\"],\"cwd\":\"/home/bendi/trains\",\"env\":{\"PI_CODING_AGENT_DIR\":\"/home/bendi/.pi/agent\"}}")
+params=$(printf '%s' "{\"argv\":[\"$node\",\"$runner\",\"--contract\",\"$contract\",\"--stall-ms\",\"300000\",\"--stage-runtime-ms\",\"1800000\"],\"cwd\":\"/home/bendi/trains\",\"env\":{\"PI_CODING_AGENT_DIR\":\"/home/bendi/.pi/agent\"}}")
 
 # The resident worker is not shell-enabled. --follow creates a scoped Minion
 # worker for this scheduled run, while the Pi supervisor keeps the durable

@@ -48,6 +48,12 @@ outputs:
   convergence_record:
     type: artifact
     description: Iteration history, changes, decisions, and final convergence verdict.
+  stage_handoffs:
+    type: artifact-set
+    description: One validated JSON handoff per fresh Pi train context; only these handoffs cross stage boundaries.
+  chain_result:
+    type: artifact
+    description: The orchestrator's terminal status, per-stage supervisor results, and remaining unknowns.
 
 parameters:
   min_independent_support: 3
@@ -68,6 +74,25 @@ parameters:
       - safety_violations
       - unhandled_branches
     missing_metric_policy: report_unknown_with_reason
+
+execution:
+  unit: train-step
+  context_boundary: fresh-pi-rpc-process-per-step
+  session_mode: --no-session
+  handoff:
+    format: json
+    location: per-step-handoff.json
+    required_fields: [schemaVersion, runId, step, status, inputsRead, outputsWritten, evidenceRefs, decisions, openQuestions, nextStep, claimsNotMade]
+    context_transfer: handoff-only
+  routing:
+    identify-sessions: extract-workflow
+    extract-workflow: define-workflow
+    define-workflow: backtest
+    backtest: compare-adjust
+    compare-adjust: loop-until-converged
+    loop-until-converged:
+      continue: backtest
+      terminal: complete
 
 steps:
   - id: identify-sessions
