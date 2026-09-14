@@ -42,16 +42,40 @@ Trains are created progressively rather than by specifying every process in adva
 
 This is the main mechanism for **forcing a workflow**: recurring implicit reasoning is gradually converted into explicit, reusable process.
 
+## First workflow: extract patterns from Codex sessions
+
+The first workflow turns a set of previous Codex sessions into a candidate train, then tests and refines that train against sessions it did not learn from.
+
+It has six stages:
+
+1. **Identify sessions** — find relevant sessions, assign stable identifiers, record metadata, remove duplicates, and split the corpus into development, tuning, and holdout sets before interpreting the sessions.
+2. **Extract a workflow** — turn repeated successful behavior into evidence-backed pattern cards: trigger, context, actions, decisions, handoffs, interventions, outcomes, and failure modes.
+3. **Define it** — encode the candidate as a declarative train with explicit inputs, outputs, acceptance checks, safety constraints, and known exceptions.
+4. **Backtest** — replay the candidate from each session's pre-execution context, without exposing the original future transcript, and compare it with a baseline.
+5. **Compare and adjust** — classify misses, make the smallest justified change, and record the reason and expected effect.
+6. **Loop** — return to backtest after every adjustment until the convergence gate passes; then run the frozen candidate once on the holdout set.
+
+The canonical first workflow is [workflows/session-pattern-extraction.yaml](workflows/session-pattern-extraction.yaml). Its operating contract is [docs/session-pattern-extraction.md](docs/session-pattern-extraction.md). The deterministic corpus preflight is [scripts/build-session-corpus-index.mjs](scripts/build-session-corpus-index.mjs).
+
+The workflow must preserve evidence links for every extracted rule. A pattern is not promoted merely because it appears often: the candidate must also make the observed outcome easier to reproduce, avoid material regressions against the baseline, and expose uncertainty instead of silently generalising an exception.
+
 ## Goal
 
 The goal is to externalise recurring human engineering workflows so agents can execute them with less micromanagement.
 
 The human should increasingly provide intent and guidance at the highest useful level, while trains encode how recurring work is carried out and handed from one stage to the next.
 
-## Open questions
+## Initial schema direction
 
-- What is the minimal YAML schema for a train?
-- What should count as a train boundary?
-- Which handoff formats should be standardised, if any?
-- How should trains express dependencies and composition?
-- When is inconsistency significant enough to justify creating or refining a train?
+The first workflow establishes a deliberately small schema vocabulary:
+
+- `version`, `kind`, and `id` identify a train;
+- `inputs` and `outputs` define the handoff contract;
+- `parameters` hold tunable thresholds without hiding them in prose;
+- `steps` describe work, dependencies, artifacts, and acceptance checks;
+- `routing` expresses the explicit loop between backtest and comparison;
+- `convergence` defines when refinement stops.
+
+This is a starting contract, not a claim that every future train needs the same fields. New schema should be added when a workflow cannot be made testable or composable without it.
+
+Remaining design questions are now downstream of this first workflow: which artifact types deserve standard formats, how different execution engines should expose replay, and which metrics generalise across train families.

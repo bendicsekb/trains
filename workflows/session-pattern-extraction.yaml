@@ -1,0 +1,178 @@
+version: "0.1"
+kind: workflow
+id: session-pattern-extraction
+name: Extract and converge a reusable workflow from previous Codex sessions
+purpose: >-
+  Discover recurring, evidence-backed patterns in historical Codex sessions,
+  encode them as a candidate train, and refine the candidate through leakage-
+  controlled backtesting until it is stable enough to freeze.
+
+inputs:
+  session_corpus:
+    type: session-set
+    required: true
+    description: Readable previous Codex sessions plus stable source references.
+  target_behavior:
+    type: string
+    required: true
+    description: The recurring job or behavior to turn into a train.
+  constraints:
+    type: object
+    required: false
+    default: {}
+    description: Safety, privacy, tooling, time, and scope constraints.
+  output_namespace:
+    type: path
+    required: true
+    description: Where the inventory, evidence, candidate, and reports are written.
+
+outputs:
+  corpus_index:
+    type: artifact
+    description: Streaming structural inventory of all source sessions; raw transcript text is not copied.
+  session_inventory:
+    type: artifact
+    description: Selected sessions, metadata, independence groups, and fixed splits.
+  pattern_catalog:
+    type: artifact
+    description: Evidence-backed pattern cards and rejected or uncertain patterns.
+  candidate_train:
+    type: train
+    description: The current declarative workflow candidate.
+  baseline_definition:
+    type: artifact
+    description: The fixed control procedure and evaluation assumptions used for comparison.
+  backtest_report:
+    type: artifact
+    description: Per-session replay results, baseline results, and aggregate metrics.
+  convergence_record:
+    type: artifact
+    description: Iteration history, changes, decisions, and final convergence verdict.
+
+parameters:
+  min_independent_support: 3
+  development_fraction: 0.6
+  tuning_fraction: 0.2
+  holdout_fraction: 0.2
+  max_iterations: 6
+  max_changed_rules_per_iteration: 3
+  convergence_patience: 2
+  material_regression_tolerance: 0.05
+  required_holdout_cases: 1
+  evaluation:
+    primary_metric: task_success
+    secondary_metrics:
+      - outcome_fidelity
+      - human_intervention_rate
+      - unnecessary_steps
+      - safety_violations
+      - unhandled_branches
+    missing_metric_policy: report_unknown_with_reason
+
+steps:
+  - id: identify-sessions
+    name: Identify relevant sessions
+    inputs: [session_corpus, target_behavior, constraints]
+    procedure:
+      - Run a deterministic streaming index over the declared session roots before asking an agent to interpret content; record paths, hashes, sizes, timestamps, parse errors, event types, roles, tools, and thread metadata without copying transcript text.
+      - Enumerate candidate sessions using explicit relevance signals, not only filenames or recency, from the corpus index.
+      - Assign a stable session id and record source, date, task intent, outcome, tools, human interventions, and privacy status.
+      - Group retries, continuations, and near-duplicates so they cannot inflate independent support.
+      - Exclude sessions that lack enough pre-execution context to replay, and record every exclusion with a reason.
+      - Fix development, tuning, and holdout splits before extracting rules; preserve the split manifest.
+    outputs: [corpus_index, session_inventory]
+    acceptance:
+      - Every selected session has a source reference and an independence group.
+      - The target behavior and inclusion criteria are written down.
+      - The three split fractions sum to 1.0 and each non-empty split is auditable.
+
+  - id: extract-workflow
+    name: Extract recurring patterns
+    needs: [identify-sessions]
+    inputs: [session_inventory, target_behavior]
+    procedure:
+      - Read development sessions and mark the precondition, trigger, goal, actions, decisions, tool use, handoffs, outcome, and interventions.
+      - Create a pattern card for each proposed recurring behavior with evidence session ids, support count, confidence, and known exceptions.
+      - Separate invariant steps from context-dependent choices and one-off tactics.
+      - Mark contradictions, missing evidence, and human judgment explicitly instead of smoothing them away.
+      - Promote a pattern to the candidate set only when it has min_independent_support independent sessions, or when it is a safety-critical guardrail with a documented rationale.
+    outputs: [pattern_catalog]
+    acceptance:
+      - Every candidate rule links to evidence and states its scope.
+      - Uncertain, contradictory, and rejected patterns remain visible.
+      - No tuning or holdout session is used to invent a development rule.
+
+  - id: define-workflow
+    name: Define the candidate train
+    needs: [extract-workflow]
+    inputs: [pattern_catalog, target_behavior, constraints, output_namespace]
+    procedure:
+      - Encode the promoted patterns as a declarative train with explicit inputs, outputs, dependencies, handoffs, and acceptance checks.
+      - Define the baseline being compared against: the original session behavior, an existing train, or a documented no-train control.
+      - Add a failure path for every known high-cost or safety-relevant failure mode.
+      - Keep assumptions and untested rules in the candidate's open-questions section.
+      - Version the candidate before any replay and record the exact evidence snapshot used to create it.
+    outputs: [candidate_train, baseline_definition]
+    acceptance:
+      - Another executor can identify what starts the train, what it must produce, and when it must stop.
+      - Each required handoff has an owner, a consumer, and a validation check.
+      - The candidate is executable in principle without consulting the source transcripts for hidden instructions.
+
+  - id: backtest
+    name: Backtest the candidate
+    needs: [define-workflow]
+    inputs: [candidate_train, baseline_definition, session_inventory, output_namespace]
+    procedure:
+      - Replay the candidate from each tuning session's pre-execution context; hide the original future transcript and downstream outcome while the candidate runs.
+      - Run the declared baseline on the same cases and hold execution conditions constant.
+      - Record per case: task success, outcome fidelity, required human interventions, unnecessary steps, safety violations, unhandled branches, and evidence used.
+      - Preserve failures as inspectable traces; do not replace a failed replay with the historical answer.
+    outputs: [backtest_report]
+    acceptance:
+      - Every tuning case has a candidate result, baseline result, and comparable evaluation.
+      - Metrics are reported per case and in aggregate; unknown or unevaluable cases are not silently dropped.
+      - Holdout results are not used to make further candidate changes.
+
+  - id: compare-adjust
+    name: Compare results and adjust the candidate
+    needs: [backtest]
+    inputs: [candidate_train, baseline_definition, backtest_report, pattern_catalog, convergence_record]
+    procedure:
+      - Compare the candidate with both the baseline and the previous candidate on the declared metrics.
+      - Classify each material miss as a missing rule, over-generalisation, ambiguity, wrong train boundary, execution defect, data leakage, or evaluator defect.
+      - Propose the smallest change that addresses the highest-value repeatable miss, changing no more than max_changed_rules_per_iteration rules.
+      - Reject changes supported only by noise, a single non-critical outlier, or an improvement that causes a material regression elsewhere.
+      - Append the comparison, decision, evidence, expected effect, and next candidate version to convergence_record.
+    outputs: [candidate_train, convergence_record]
+
+  - id: loop-until-converged
+    name: Repeat backtest or freeze the candidate
+    needs: [compare-adjust]
+    inputs: [candidate_train, baseline_definition, session_inventory, backtest_report, convergence_record, output_namespace]
+    procedure:
+      - Mark the iteration as continue when the candidate needs another evidence-backed adjustment and max_iterations has not been reached.
+      - Mark the workflow as failed with max_iterations_exceeded when the iteration limit is reached without convergence.
+      - When all convergence checks pass, freeze the candidate version before touching the holdout set.
+      - Run the frozen candidate once on the untouched holdout set using the backtest protocol, and append those results to backtest_report and convergence_record.
+      - Mark the workflow as converged only when the holdout run completes and does not violate a required convergence check.
+    outputs: [candidate_train, backtest_report, convergence_record]
+    routing:
+      - when: "convergence.status == continue"
+        goto: backtest
+      - when: "convergence.status == converged"
+        goto: complete
+
+convergence:
+  status: pending
+  required_checks:
+    - The candidate meets or improves the baseline on the primary task-success metric.
+    - No secondary metric has a material regression greater than material_regression_tolerance.
+    - The last convergence_patience tuning iterations made no material improvement, or the candidate reached the explicit acceptance target.
+    - All known high-cost and safety-relevant branches have an explicit path or an explicit human gate.
+    - The final holdout run was completed after the candidate was frozen.
+  failure_statuses:
+    - insufficient_evidence
+    - unreplayable
+    - overfit
+    - unsafe
+    - max_iterations_exceeded
