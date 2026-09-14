@@ -11,14 +11,14 @@ function value(argv, flag, fallback) {
 const argv = process.argv.slice(2);
 const contractPath = value(argv, "--contract");
 if (!contractPath) {
-  console.error("Usage: verify-session-pattern-extraction-chain.mjs --contract <contract.json>");
+  console.error("Usage: verify-session-pattern-extraction-chain.mjs --contract <contract.json> [--chain-dir <dir>]");
   process.exit(2);
 }
 
 const resolvedContractPath = path.resolve(contractPath);
 const contract = JSON.parse(fs.readFileSync(resolvedContractPath, "utf8"));
 const runDir = path.dirname(resolvedContractPath);
-const chainDir = path.join(runDir, "chain");
+const chainDir = path.resolve(value(argv, "--chain-dir", path.join(runDir, "chain")));
 const failures = [];
 const checks = [];
 
@@ -53,7 +53,7 @@ for (const stepDir of stepDirs) {
   check(`step-contract:${path.basename(stepDir)}`, fs.existsSync(stepContractPath), "step contract exists");
   if (!fs.existsSync(stepContractPath)) continue;
   const stepContract = JSON.parse(fs.readFileSync(stepContractPath, "utf8"));
-  check(`step-fresh-context:${stepContract.runId}`, stepContract.metadata?.freshContext === true && stepContract.metadata?.handoffInput !== undefined, "fresh context and declared input handoff");
+  check(`step-fresh-context:${stepContract.runId}`, stepContract.metadata?.freshContext === true && stepContract.metadata?.inputHandoff !== undefined, "fresh context and declared input handoff");
   check(`step-no-session:${stepContract.runId}`, fs.existsSync(path.join(stepDir, "events.ndjson"))
     ? fs.readFileSync(path.join(stepDir, "events.ndjson"), "utf8").includes('"--no-session"')
     : true, "Pi launch includes --no-session when events exist");

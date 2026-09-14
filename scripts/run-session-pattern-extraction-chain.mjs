@@ -14,6 +14,7 @@ function usage() {
   console.error(`Usage:
   run-session-pattern-extraction-chain.mjs --contract <contract.json>
     [--stall-ms 300000] [--stage-runtime-ms 1800000]
+    [--chain-dir <dir>] [--artifact-dir <dir>]
     [--node <node>] [--pi-cli <cli.js>] [--agent-dir <dir>]
     [--provider openai-codex] [--model gpt-5.6-luna] [--thinking xhigh]`);
 }
@@ -33,7 +34,7 @@ if (!contractPath) {
     "--artifact-dir",
     path.join(projectDir, "artifacts/session-pattern-extraction/full-4-20260914"),
   ));
-  const chainDir = path.join(runDir, "chain");
+  const chainDir = path.resolve(value(argv, "--chain-dir", path.join(runDir, "chain")));
   const stepsDir = path.join(chainDir, "steps");
   const chainEventsPath = path.join(chainDir, "chain-events.ndjson");
   const chainResultPath = path.join(chainDir, "chain-result.json");
