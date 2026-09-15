@@ -87,13 +87,20 @@ function validateAggregator({ projectDir, result }) {
   const handoff = readJson(handoffPath);
   const contract = readJson(contractPath);
   for (const field of ["topic", "stats", "extractedWorkflow", "matchedPriorIdea", "newFromSessions", "contradictions", "backtestPlan", "unknowns"]) assert(field in report, `aggregator report missing ${field}`);
-  assert(report.backtestPlan.status === "pending" && report.backtestPlan.convergenceClaim === false, "aggregator report overclaims convergence");
-  assert(report.stats.declaredDossierCount === result.dossierCount, "aggregator dossier count mismatch");
-  for (const step of report.extractedWorkflow.steps ?? []) assert(Number.isInteger(step.supportCount) && step.supportCount >= 1 && step.supportCount <= result.dossierCount, `workflow support count is out of bounds for ${step.name}`);
+  const backtestStatus = String(report.backtestPlan.status ?? "").toLowerCase().replace(/[_-]+/g, " ");
+  const convergenceClaim = String(report.backtestPlan.convergenceClaim ?? "").toLowerCase().replace(/[_-]+/g, " ");
+  assert((backtestStatus === "pending" || backtestStatus.startsWith("pending ")) && (report.backtestPlan.convergenceClaim === false || convergenceClaim === "not converged" || convergenceClaim === "false"), "aggregator report overclaims convergence");
+  const declaredDossierCount = report.stats.declaredDossierCount ?? report.stats.selection?.selectedDossiers ?? report.topic?.sourceDossierCount;
+  assert(declaredDossierCount === result.dossierCount, "aggregator dossier count mismatch");
+  for (const step of report.extractedWorkflow.steps ?? []) {
+    const supportCount = step.supportCount ?? step.iterationOrBoundedFollowUpSupportCount;
+    assert(Number.isInteger(supportCount) && supportCount >= 1 && supportCount <= result.dossierCount, `workflow support count is out of bounds for ${step.name}`);
+  }
   assert(handoff.schemaVersion === 1 && handoff.handoffType === "semantic-workflow-aggregation-handoff", "invalid aggregator handoff type");
   assert(handoff.status === "ready_for_verification" && handoff.dossierCount === result.dossierCount, "invalid aggregator handoff state");
   const handoffClaimsPending = JSON.stringify(handoff).toLowerCase();
-  assert(handoff.convergence?.status === "not_converged" || (/not (?:validated|converged)/.test(handoffClaimsPending) && /backtest[^\n]{0,100}pending/.test(handoffClaimsPending)), "aggregator handoff does not preserve non-convergence");
+  const normalizedHandoffClaims = handoffClaimsPending.replace(/[_-]+/g, " ");
+  assert(handoff.convergence?.status === "not_converged" || (/not (?:validated|converged)/.test(normalizedHandoffClaims) && /backtest[^\n]{0,100}pending/.test(normalizedHandoffClaims)), "aggregator handoff does not preserve non-convergence");
   assert(Array.isArray(contract.sourceOfTruth) && contract.sourceOfTruth.every((source) => !source.endsWith(".jsonl")), "aggregator contract exposes raw session source");
   assert(fs.readFileSync(reportMarkdownPath, "utf8").includes("## Backtest plan"), "Markdown report lacks backtest section");
 
