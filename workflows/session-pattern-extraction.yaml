@@ -72,6 +72,9 @@ outputs:
   semantic_extraction_handoff:
     type: artifact
     description: Aggregator handoff recording dossier support, evidence boundaries, unknowns, and non-convergence.
+  semantic_backtest_report:
+    type: artifact-set
+    description: Per-case and aggregate observational comparison of the candidate workflow with the prior idea on tuning sessions; causal unknowns remain explicit.
 
 parameters:
   min_independent_support: 3
@@ -135,6 +138,20 @@ execution:
       - Keep raw sessions and worker event ledgers out of the aggregator context.
       - Leave backtest and convergence explicitly pending until a separate held-out train evaluates the extracted workflow.
     outputs: [semantic_session_dossiers, semantic_workflow_extraction, semantic_extraction_handoff]
+  semantic_backtest:
+    runner: scripts/run-semantic-workflow-backtest.mjs
+    verifier: scripts/verify-semantic-workflow-backtest.mjs
+    context_boundary: fresh-pi-rpc-process-per-case-and-aggregator
+    session_mode: --no-session
+    input_boundary: bounded-evidence-packet-plus-frozen-candidate-and-baseline
+    evaluation_mode: observational_trace_not_replay
+    procedure:
+      - Select only tuning sessions with explicit product-factory/product-factory-pi signals, observable building evidence, and one session per independence group.
+      - Run one fresh evaluator context per case and one fresh aggregator; do not expose raw sessions, sibling events, or other case packets across boundaries.
+      - Evaluate candidate and baseline on the same bounded trace and preserve supported, unsupported, mixed, and unknown metric states.
+      - Do not present observational trace support as causal replay, counterfactual task success, or convergence.
+      - Keep holdout sealed unless a separate comparison decision freezes the candidate.
+    outputs: [semantic_backtest_report]
 
 steps:
   - id: identify-sessions

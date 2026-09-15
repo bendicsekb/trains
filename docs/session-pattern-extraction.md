@@ -24,6 +24,10 @@ The runner writes `attempt-001`, `attempt-002`, and so on under the run director
 
 The verifier is intentionally separate from Pi. It checks bounded packet/dossier sizes, required sections, explicit boundary assertions, report support-count bounds, pending backtest status, and `--no-session` in every supervisor launch. A successful extraction is not convergence; it is the input to the next backtest train.
 
+## Observational backtest boundary
+
+Run `scripts/run-semantic-workflow-backtest.mjs` against a candidate report and the tuning split after extraction. This repaired mode creates one fresh evaluator context per tuning case plus a fresh aggregator. It compares the candidate and prior idea on the same bounded trace, but does not call that a causal replay: the evaluator may label directly observed support, contradiction, or unknown, while counterfactual task success and outcome fidelity remain unknown unless the evidence directly supports them. Run `scripts/verify-semantic-workflow-backtest.mjs` independently. A report with unknown metrics is an honest incomplete backtest, not a reason to invent scores or touch the holdout.
+
 ## Pi execution and context boundaries
 
 The workflow is executed as a chain of trains, not as one long Pi conversation. Each stage starts a new supervised Pi RPC process with `--no-session` and its own run contract and event ledger:

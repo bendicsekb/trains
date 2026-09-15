@@ -65,6 +65,8 @@ Discovery now ranks sessions using a frozen-snapshot interest index: canonical h
 
 The bounded semantic follow-up is [scripts/run-semantic-session-workflow-extraction.mjs](scripts/run-semantic-session-workflow-extraction.mjs). It selects development-split sessions with those historical signals and observable building activity, creates a clipped/redacted evidence packet for each source, runs one fresh Pi dossier context per session, and hands only the dossiers to a fresh aggregator. Each retry gets a numbered attempt directory. Verify a completed run with [scripts/verify-semantic-session-workflow-extraction.mjs](scripts/verify-semantic-session-workflow-extraction.mjs); the verifier checks artifact shape, boundedness, handoff boundaries, and `--no-session` isolation independently.
 
+The repaired backtest is [scripts/run-semantic-workflow-backtest.mjs](scripts/run-semantic-workflow-backtest.mjs). It evaluates a frozen candidate and the prior idea on separate tuning sessions in fresh contexts, but explicitly runs in `observational_trace_not_replay` mode: causal task success and counterfactual outcomes remain unknown unless directly evidenced. Unknown metrics are retained rather than forced into pass/fail values. Verify it with [scripts/verify-semantic-workflow-backtest.mjs](scripts/verify-semantic-workflow-backtest.mjs). Holdout remains sealed until an explicit candidate-freeze decision.
+
 The workflow must preserve evidence links for every extracted rule. A pattern is not promoted merely because it appears often: the candidate must also make the observed outcome easier to reproduce, avoid material regressions against the baseline, and expose uncertainty instead of silently generalising an exception.
 
 ## Goal
