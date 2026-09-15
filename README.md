@@ -2,6 +2,8 @@
 
 A small framework for turning recurring agent work and reasoning into explicit, composable workflows that can be executed more consistently.
 
+The canonical conceptual and YAML contract is [docs/trains-spec.md](docs/trains-spec.md).
+
 ## Core concepts
 
 ### Train
@@ -12,13 +14,13 @@ A train is lean declarative YAML containing:
 
 - an `id`;
 - steps containing only `inputs`, `procedure`, and `outputs`.
-- an optional `repeat` property when a sequence loops.
+- an optional `repeat` property on a car that invokes a looped procedure.
 
 An input or output is either documented inline with `doc` or linked with `ref`. References imply dependencies, and output acceptance checks live on the output they validate. Outputs should be concrete results or references—such as a commit hash, report path, deployment URL, or test run—not generic workflow state. The working environment remains implicit unless a step needs an immutable handoff. The first unbound inputs and final outputs form the workflow interface, so it is not declared again at the top level. Runner choice, context isolation, retries, paths, provenance, evidence counts, lifecycle state, and backtest bookkeeping stay outside the train YAML.
 
 A step must perform a meaningful transformation, verification, classification, or decision. Do not add a bookkeeping-only step to persist an existing result: when durability matters, require the producing output itself to be a concrete durable reference.
 
-Repetition is control flow, not a step. Express it with `repeat.from` and `repeat.until`; `until` normally references an output's acceptance result.
+Repetition is control flow, not a step. A loop applies to one car; if several cars repeat together, put them in a nested train and repeat the invoking car. `repeat.inputs` explicitly feeds outputs into the next invocation, while `repeat.until` references the acceptance result that exits the loop.
 
 ### Handoff
 
@@ -85,7 +87,7 @@ The first workflow establishes a deliberately small schema vocabulary:
 - each step has only `inputs`, `procedure`, and `outputs`;
 - `doc` defines an input or output inline and `ref` links to another output;
 - output-local `acceptance` validates that output;
-- optional `repeat` identifies the first repeated step and the accepted output that ends the loop.
+- optional car-level `repeat` declares explicit feedback inputs and the accepted output that ends the loop.
 
 Pi execution details and run evidence live beside the workflow in runners, contracts, reports, and registry records. New train fields should be added only when executable meaning cannot be represented with this core.
 
