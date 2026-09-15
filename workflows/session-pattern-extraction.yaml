@@ -1,9 +1,5 @@
 id: session-pattern-extraction
 
-repeat:
-  from: backtest
-  until: {ref: adjust.decision.accepted}
-
 steps:
   identify:
     inputs:
@@ -44,39 +40,29 @@ steps:
         acceptance:
           - The baseline and comparison assumptions are explicit.
 
-  backtest:
+  iterate:
     inputs:
       candidate: {ref: define.candidate}
       baseline: {ref: define.baseline}
       tuning: {ref: identify.inventory.tuning}
-    procedure:
-      - Evaluate candidate and baseline on the same unseen tuning cases and preserve failures and unknowns.
-    outputs:
-      report:
-        doc: Comparable per-case and aggregate results.
-        acceptance:
-          - Every case contains candidate and baseline results without using holdout evidence.
-
-  adjust:
-    inputs:
-      candidate: {ref: define.candidate}
-      report: {ref: backtest.report}
       patterns: {ref: extract.patterns}
     procedure:
-      - Classify material misses and make only the smallest repeatedly supported change.
+      ref: ./session-pattern-extraction-iteration.yaml
+    repeat:
+      inputs:
+        previous: {ref: result}
+      until: {ref: result.accepted}
     outputs:
       candidate:
-        doc: Adjusted or unchanged candidate.
-        acceptance:
-          - Every change names its evidence, expected effect, and regressions.
+        ref: adjust.candidate
       decision:
-        doc: Repeat or freeze decision.
-        acceptance:
-          - Repeat is chosen only for an evidence-backed adjustment.
+        ref: adjust.decision
+      result:
+        ref: adjust.result
 
   converge:
     inputs:
-      candidate: {ref: adjust.candidate}
+      candidate: {ref: iterate.candidate}
       holdout: {ref: identify.inventory.holdout}
     procedure:
       - Freeze the converged candidate and evaluate it once on holdout.

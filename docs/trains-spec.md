@@ -2,9 +2,9 @@
 
 Status: sufficient for the first runner implementation; intentionally minimal.
 
-This is the canonical target contract. Existing prototype workflows and runners
-still use an earlier top-level repeat form; they must be migrated to the nested,
-single-car loop described here before they are considered conforming.
+This is the canonical contract. The generic runner rejects the earlier
+top-level repeat form; the repository's canonical workflows now use the
+nested, single-car loop described here.
 
 ## Founding note
 

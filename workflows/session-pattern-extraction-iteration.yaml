@@ -1,0 +1,41 @@
+id: session-pattern-extraction-iteration
+
+steps:
+  backtest:
+    inputs:
+      candidate: {doc: Candidate train for this tuning iteration.}
+      baseline: {doc: Fixed comparison behavior.}
+      tuning: {doc: Fixed unseen tuning cases.}
+      previous: {doc: Optional result from the previous tuning iteration.}
+    procedure:
+      - Evaluate the candidate and baseline on the same unseen tuning cases and preserve failures and unknowns.
+    outputs:
+      report:
+        doc: Comparable per-case and aggregate results.
+        acceptance:
+          - Every case contains candidate and baseline results without using holdout evidence.
+      candidate:
+        doc: Candidate carried into the adjustment decision.
+        acceptance:
+          - The candidate is identified without silently changing its definition during backtest.
+
+  adjust:
+    inputs:
+      candidate: {ref: backtest.candidate}
+      report: {ref: backtest.report}
+      patterns: {doc: Extracted supported and uncertain patterns.}
+    procedure:
+      - Classify material misses and make only the smallest repeatedly supported change.
+    outputs:
+      candidate:
+        doc: Adjusted or unchanged candidate.
+        acceptance:
+          - Every change names its evidence, expected effect, and regressions.
+      decision:
+        doc: Repeat or freeze decision for this tuning iteration.
+        acceptance:
+          - Repeat is chosen only for an evidence-backed adjustment.
+      result:
+        doc: Tuning result with accepted true only when the loop may terminate.
+        acceptance:
+          - The result preserves unknowns and exposes whether another iteration is justified.

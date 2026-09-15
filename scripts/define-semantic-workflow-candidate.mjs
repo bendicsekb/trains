@@ -143,14 +143,35 @@ export function buildCandidateDefinition(report) {
     }];
   }));
 
-  return {
+  const cycleSteps = Object.fromEntries(Object.entries(steps).filter(([id]) => id !== ids[0]).map(([id, step], index) => {
+    if (index === 0) {
+      return [id, {
+        ...step,
+        inputs: {
+          frame: { doc: "Intent, constraints, uncertainty, work mode, and evidence boundary." },
+          previous: { doc: "Optional result from the previous improvement iteration." },
+        },
+      }];
+    }
+    return [id, step];
+  }));
+  const candidate = {
     id: slugify(report.topic.name),
-    repeat: {
-      from: "inspect",
-      until: { ref: "resolve.result.accepted" },
+    steps: {
+      [ids[0]]: steps[ids[0]],
+      improve: {
+        inputs: { frame: { ref: `${ids[0]}.frame` } },
+        procedure: { ref: "./candidate-cycle.yaml" },
+        repeat: {
+          inputs: { previous: { ref: "result" } },
+          until: { ref: "result.accepted" },
+        },
+        outputs: { result: { ref: `${ids.at(-1)}.result` } },
+      },
     },
-    steps,
   };
+  Object.defineProperty(candidate, "cycleSteps", { value: cycleSteps, enumerable: false });
+  return candidate;
 }
 
 export function defineCandidateFromReport({ projectDir, reportPath, outputPath }) {
@@ -161,7 +182,9 @@ export function defineCandidateFromReport({ projectDir, reportPath, outputPath }
   const rendered = renderCandidateYaml(candidate);
   ensureDir(path.dirname(outputPath));
   fs.writeFileSync(outputPath, rendered, "utf8");
-  return { candidate, rendered };
+  const cycleOutputPath = path.join(path.dirname(outputPath), "candidate-cycle.yaml");
+  fs.writeFileSync(cycleOutputPath, renderCandidateYaml({ id: `${candidate.id}-cycle`, steps: candidate.cycleSteps }), "utf8");
+  return { candidate, rendered, cycleOutputPath };
 }
 
 function main() {
@@ -185,6 +208,7 @@ function main() {
       }
     }
     fs.writeFileSync(absoluteRegistryOutput, result.rendered, "utf8");
+    fs.copyFileSync(result.cycleOutputPath, path.join(path.dirname(absoluteRegistryOutput), "candidate-cycle.yaml"));
   }
   console.log(JSON.stringify({
     ok: true,

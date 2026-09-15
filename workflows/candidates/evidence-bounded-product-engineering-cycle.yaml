@@ -1,0 +1,58 @@
+id: evidence-bounded-product-engineering-cycle
+
+steps:
+  inspect:
+    inputs:
+      frame: {doc: "Intent, constraints, uncertainty, and evidence boundary."}
+      previous: {doc: Optional result from the previous improvement iteration.}
+    procedure:
+      - Inspect the work and choose a bounded next probe or decision.
+    outputs:
+      next_action:
+        doc: Bounded next action and stop conditions.
+        acceptance:
+          - The next action is bounded and its stop conditions are explicit.
+
+  execute:
+    inputs:
+      next_action: {ref: inspect.next_action}
+    procedure:
+      - Execute only the scoped slice.
+    outputs:
+      scoped_result:
+        doc: Result of the scoped execution.
+        acceptance:
+          - Execution stays within scope and preserves required provenance and rollback.
+
+  observe:
+    inputs:
+      scoped_result: {ref: execute.scoped_result}
+    procedure:
+      - Observe and independently verify at the relevant boundaries.
+    outputs:
+      verification:
+        doc: Observed evidence from the relevant boundaries.
+        acceptance:
+          - Relevant positive, negative, runtime, and external boundaries are checked without broadening the claim.
+
+  classify:
+    inputs:
+      verification: {ref: observe.verification}
+    procedure:
+      - Classify mismatches before choosing recovery.
+    outputs:
+      classification:
+        doc: Classified result, mismatch, or failure.
+        acceptance:
+          - Blocked, partial, interrupted, and failed results retain their actual classification.
+
+  resolve:
+    inputs:
+      classification: {ref: classify.classification}
+    procedure:
+      - Make the smallest evidence-backed change, route, or conclusion.
+    outputs:
+      result:
+        doc: Concrete result or reference supported by the available evidence.
+        acceptance:
+          - The result is accepted only when the scoped claim is supported or an explicit stop condition is reached.

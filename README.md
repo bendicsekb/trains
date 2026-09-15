@@ -79,6 +79,56 @@ The goal is to externalise recurring human engineering workflows so agents can e
 
 The human should increasingly provide intent and guidance at the highest useful level, while trains encode how recurring work is carried out and handed from one stage to the next.
 
+## Generic Pi runner
+
+`src/trains-runner.mjs` is the first generic execution engine for the contract
+above. It compiles references into a dependency graph, runs each car in a fresh
+Pi `--no-session` RPC process, validates a structured handoff, supports nested
+train call frames, evaluates one-car `repeat` loops, and persists a resumable
+state snapshot plus append-only events outside the train YAML.
+
+Run it with:
+
+```bash
+npm install
+node scripts/run-train.mjs \
+  --train workflows/your-train.yaml \
+  --input-json inputs.json \
+  --pi-cli /path/to/pi-cli.js \
+  --worker-command /path/to/node \
+  --provider openai-codex \
+  --model gpt-5.6-luna \
+  --thinking xhigh
+```
+
+The run directory contains `state.json`, `events.ndjson`, one supervised Pi
+run per car invocation, and nested call-frame state. A clean Pi exit is still
+only `needs_verification`; the runner advances a car only after independently
+validating its handoff envelope. Prose acceptance checks remain worker-facing
+contracts, so semantic acceptance must be independently verified by the caller.
+
+The required handoff shape is:
+
+```json
+{
+  "schemaVersion": 1,
+  "runId": "...",
+  "trainId": "...",
+  "step": "...",
+  "invocationId": "...",
+  "status": "ready_for_verification",
+  "outputs": {"result": {"accepted": true}},
+  "evidenceRefs": [],
+  "claimsNotMade": []
+}
+```
+
+The runner intentionally does not add `state`, model settings, retries, paths,
+or tool policy to train YAML. The current runner uses the existing Pi Product
+Factory supervisor as its lifecycle adapter; Pi's SDK/extension tree APIs are
+useful for interactive in-session workflows, but a fresh RPC process per car is
+the stronger boundary for durable, independently verifiable trains.
+
 ## Initial schema direction
 
 The first workflow establishes a deliberately small schema vocabulary:

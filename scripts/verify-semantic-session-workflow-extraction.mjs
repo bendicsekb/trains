@@ -108,8 +108,13 @@ function validateAggregator({ projectDir, result }) {
   const reportBytes = fs.readFileSync(reportJsonPath);
   const expectedCandidate = buildCandidateDefinition(report);
   assert(fs.readFileSync(candidateTrainPath, "utf8") === renderCandidateYaml(expectedCandidate), "candidate train is not the deterministic definition of the verified extraction report");
-  assert(Object.keys(expectedCandidate).join(",") === "id,repeat,steps", "candidate train contains duplicated interface or non-workflow metadata");
-  assert(Object.values(expectedCandidate.steps).every((step) => Object.keys(step).join(",") === "inputs,procedure,outputs"), "candidate steps are not lean workflow definitions");
+  assert(Object.keys(expectedCandidate).join(",") === "id,steps", "candidate train contains duplicated interface or non-workflow metadata");
+  assert(!Object.prototype.hasOwnProperty.call(expectedCandidate, "repeat") && expectedCandidate.steps.improve?.repeat, "candidate repeat must belong to one car");
+  assert(Object.entries(expectedCandidate.steps).every(([stepId, step]) => {
+    const keys = Object.keys(step);
+    const lean = keys.filter((key) => key !== "repeat").join(",") === "inputs,procedure,outputs";
+    return lean && (!step.repeat || stepId === "improve");
+  }), "candidate steps are not lean workflow definitions");
 
   const eventsPath = path.join(path.dirname(contractPath), "events.ndjson");
   const events = fs.readFileSync(eventsPath, "utf8").split("\n").filter(Boolean).map(JSON.parse);
