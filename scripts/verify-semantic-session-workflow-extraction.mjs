@@ -18,7 +18,7 @@ function assert(condition, message) {
 function boundaryCheck(boundary, pattern, safeTextPattern) {
   const entries = Object.entries(boundary ?? {}).filter(([name]) => pattern.test(name));
   const allText = Array.isArray(boundary)
-    ? boundary.map((value) => String(value)).join("\n")
+    ? boundary.map((value) => typeof value === "object" ? JSON.stringify(value) : String(value)).join("\n")
     : Object.entries(boundary ?? {}).map(([name, value]) => `${name}: ${String(value)}`).join("\n");
   const lines = allText.split(/[\n.;]+/).filter(Boolean);
   const positive = /\b(?:opened|read|copied|included|accessed|exposed)\b/i;
