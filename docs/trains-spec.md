@@ -150,9 +150,17 @@ For each car invocation, Pi starts a clean context seeded with:
 - the relevant outputs referenced by those inputs;
 - no undeclared sibling context or private reasoning.
 
-Pi executes the car, validates its outputs against their acceptance checks, and hands the outputs to dependent cars. A nested train receives its own call frame and clean car contexts.
+Pi executes the car, validates its structured handoff against the declared
+output boundary, and hands the outputs to dependent cars. Semantic acceptance
+prose remains a verification contract unless a deterministic verifier or human
+review supplies independent evidence. A nested train receives its own call
+frame and clean car contexts.
 
-The runner owns process mechanics including model selection, context creation, retries, timeouts, persistence, event logs, and supervision. Those mechanics do not belong in train YAML.
+The Pi Trains extension owns scheduling, fresh-session creation, bounded
+repetition, steering, persistence, and lifecycle transitions. It stores those
+runtime details in Pi custom session entries rather than train YAML. A legacy
+subprocess runner may provide a batch compatibility path, but it is not part
+of the train contract.
 
 ## Learning loop
 

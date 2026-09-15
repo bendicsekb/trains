@@ -81,6 +81,45 @@ The human should increasingly provide intent and guidance at the highest useful 
 
 ## Generic Pi runner
 
+The primary runtime is now the Pi-native extension in
+[`extensions/train-runner.js`](extensions/train-runner.js). Install this repo as
+a Pi package or load the extension directly:
+
+```bash
+pi install /home/bendi/trains
+# or, for a one-off run:
+pi -e /home/bendi/trains/extensions/train-runner.js
+```
+
+Inside Pi, start a train with:
+
+```text
+/train workflows/your-train.yaml {"request":"..."}
+/train-status
+/train-steer Please re-check the evidence boundary.
+/train-pause
+/train-resume
+/train-cancel
+```
+
+The extension is the state machine: it loads the lean YAML, schedules runnable
+cars, creates a fresh Pi session with `newSession()` for every invocation,
+passes only declared inputs, and advances only after the car calls the
+terminating `train_handoff` tool and Pi emits `agent_settled`. Complete state
+snapshots are persisted as `trains.state.v1` custom session entries, so the
+controller can reconstruct itself after a session reload. Nested procedures are
+call frames, and car-level repeats create another fresh invocation with
+explicit feedback inputs. `/train-steer` records the exact intervention in
+the same state history.
+
+The handoff is structurally validated. YAML acceptance clauses remain
+worker-facing prose unless a deterministic verifier or human review supplies
+semantic evidence; terminal runs therefore retain a verification boundary
+instead of treating an agent assertion as independent proof.
+
+The subprocess runner below remains as a compatibility and regression harness
+for the earlier batch workflow. It is not the Pi-native execution path.
+
 `src/trains-runner.mjs` is the first generic execution engine for the contract
 above. It compiles references into a dependency graph, runs each car in a fresh
 Pi `--no-session` RPC process, validates a structured handoff, supports nested
@@ -124,10 +163,9 @@ The required handoff shape is:
 ```
 
 The runner intentionally does not add `state`, model settings, retries, paths,
-or tool policy to train YAML. The current runner uses the existing Pi Product
-Factory supervisor as its lifecycle adapter; Pi's SDK/extension tree APIs are
-useful for interactive in-session workflows, but a fresh RPC process per car is
-the stronger boundary for durable, independently verifiable trains.
+or tool policy to train YAML. The native extension uses Pi's session and
+extension APIs for interactive execution; the compatibility runner uses the
+existing Pi Product Factory supervisor for batch execution.
 
 ## Initial schema direction
 
