@@ -61,20 +61,10 @@ steps:
       intervention:
         doc: "Smallest evidence-backed change, route, check, or stop."
         acceptance:
-          - "The response is the smallest change, route, check, or stop supported by evidence."
-  update:
-    inputs:
-      intervention: {ref: "intervene.intervention"}
-    procedure:
-      - "Record durable evidence."
-    outputs:
-      record:
-        doc: "Durable evidence or a reference to it."
-        acceptance:
-          - "The evidence, decisions, and unknowns are recorded or referenced concretely."
+          - "The response is the smallest supported change, route, check, or stop, returned as a concrete result or reference."
   repeat:
     inputs:
-      record: {ref: "update.record"}
+      intervention: {ref: "intervene.intervention"}
     procedure:
       - "Repeat, stop, or accept only a scoped claim at the evidence gate."
     outputs:

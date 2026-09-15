@@ -95,8 +95,9 @@ export function buildCandidateDefinition(report) {
     throw new Error(`unsupported extracted workflow status: ${extracted.status}`);
   }
 
-  const ids = extracted.steps.map(stepId).map((id) => id.replace(/^\d+-/, ""));
-  const outputNames = ["frame", "next_action", "scoped_result", "verification", "classification", "intervention", "record", "decision"];
+  const workflowSteps = extracted.steps.filter((step) => !/^Update durable evidence and state$/i.test(step.name));
+  const ids = workflowSteps.map(stepId).map((id) => id.replace(/^\d+-/, ""));
+  const outputNames = ["frame", "next_action", "scoped_result", "verification", "classification", "intervention", "decision"];
   const outputDocs = [
     "Intent, constraints, uncertainty, work mode, and evidence boundary.",
     "Bounded next action and stop conditions.",
@@ -104,7 +105,6 @@ export function buildCandidateDefinition(report) {
     "Observed evidence from the relevant boundaries.",
     "Classified result, mismatch, or failure.",
     "Smallest evidence-backed change, route, check, or stop.",
-    "Durable evidence or a reference to it.",
     "Repeat, stop, or accept_scoped_claim.",
   ];
   const acceptance = [
@@ -113,11 +113,10 @@ export function buildCandidateDefinition(report) {
     "Execution stays within scope and preserves required provenance and rollback.",
     "Relevant positive, negative, runtime, and external boundaries are checked without broadening the claim.",
     "Blocked, partial, interrupted, and failed results retain their actual classification.",
-    "The response is the smallest change, route, check, or stop supported by evidence.",
-    "The evidence, decisions, and unknowns are recorded or referenced concretely.",
+    "The response is the smallest supported change, route, check, or stop, returned as a concrete result or reference.",
     "The decision is repeat, stop, or accept_scoped_claim, and any accepted claim stays within the evidence boundary.",
   ];
-  const steps = Object.fromEntries(extracted.steps.map((step, index) => {
+  const steps = Object.fromEntries(workflowSteps.map((step, index) => {
     const supportCount = step.supportCount ?? step.iterationOrBoundedFollowUpSupportCount;
     if (!Number.isInteger(supportCount) || supportCount < 1) throw new Error(`invalid support count for extracted step ${step.step}`);
     const previousOutput = index === 0 ? null : outputNames[index - 1];
@@ -136,9 +135,7 @@ export function buildCandidateDefinition(report) {
     };
     const procedure = index === 1
       ? "Inspect the work and choose a bounded next probe or decision."
-      : index === 6
-        ? "Record durable evidence."
-        : `${step.name.replace(/\.$/, "")}.`;
+      : `${step.name.replace(/\.$/, "")}.`;
     return [ids[index], {
       inputs,
       procedure: [procedure],

@@ -15,6 +15,8 @@ A train is lean declarative YAML containing:
 
 An input or output is either documented inline with `doc` or linked with `ref`. References imply dependencies, and output acceptance checks live on the output they validate. Outputs should be concrete results or references—such as a commit hash, report path, deployment URL, or test run—not generic workflow state. The working environment remains implicit unless a step needs an immutable handoff. The first unbound inputs and final outputs form the workflow interface, so it is not declared again at the top level. Runner choice, context isolation, retries, paths, provenance, evidence counts, lifecycle state, and backtest bookkeeping stay outside the train YAML.
 
+A step must perform a meaningful transformation, verification, classification, or decision. Do not add a bookkeeping-only step to persist an existing result: when durability matters, require the producing output itself to be a concrete durable reference.
+
 ### Handoff
 
 A **handoff** is the explicit output of a train that another train can consume.
