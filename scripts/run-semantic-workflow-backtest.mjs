@@ -241,7 +241,7 @@ function validateCaseHandoff(handoffPath, { expectedRunId, expectedSessionId, ca
   const boundary = handoff.boundaryChecks ?? handoff.boundary ?? {};
   const unsafeTrueKeys = ["rawSessionOpened", "otherHistoricalSessionsOpened", "siblingWorkerArtifactsOpened", "fullTranscriptCopied", "secretsCopied", "rawTranscriptOpened", "otherCasesOpened", "workerArtifactsOpened", "causalReplay", "semanticReplay", "counterfactualEvaluation"];
   if (unsafeTrueKeys.some((key) => boundary[key] === true)) throw new Error(`case handoff violated its observational boundary: ${handoffPath}`);
-  if (boundary.observationalOnly !== true && boundary.mode !== "observational-semantic-backtest-case") throw new Error(`case handoff lacks observational boundary: ${handoffPath}`);
+  if (boundary.observationalOnly !== true && boundary.observationalTraceOnly !== true && boundary.evaluationModeExact !== true && boundary.mode !== "observational-semantic-backtest-case") throw new Error(`case handoff lacks observational boundary: ${handoffPath}`);
   return handoff;
 }
 
