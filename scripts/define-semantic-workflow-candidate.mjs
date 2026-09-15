@@ -135,12 +135,6 @@ export function buildCandidateDefinition(report) {
         acceptance: [acceptance[index]],
       },
     };
-    if (index === 2 || index === 5) {
-      outputs.work = {
-        ref: "inplace",
-        acceptance: ["In-place changes stay within the declared scope."],
-      };
-    }
     const procedure = `${step.name.replace(/\.$/, "")}.`;
     return [ids[index], {
       inputs,

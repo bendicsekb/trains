@@ -33,10 +33,6 @@ steps:
         doc: "Result of the scoped execution."
         acceptance:
           - "Execution stays within scope and preserves required provenance and rollback."
-      work:
-        ref: "inplace"
-        acceptance:
-          - "In-place changes stay within the declared scope."
   observe:
     inputs:
       scoped_result: {ref: "execute.scoped_result"}
@@ -67,10 +63,6 @@ steps:
         doc: "Smallest evidence-backed change, route, check, or stop."
         acceptance:
           - "The response is the smallest change, route, check, or stop supported by evidence."
-      work:
-        ref: "inplace"
-        acceptance:
-          - "In-place changes stay within the declared scope."
   update:
     inputs:
       intervention: {ref: "intervene.intervention"}
