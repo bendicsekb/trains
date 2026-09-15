@@ -4,7 +4,6 @@ steps:
     inputs:
       intent: {doc: "Requested outcome."}
       constraints: {doc: "Optional safety, scope, and environment constraints."}
-      current_state: {doc: "Current source, runtime, data, or operational state."}
       evidence_boundary: {doc: "Evidence that may be inspected and claims it may support."}
     procedure:
       - "Frame intent, constraints, uncertainty, and the evidence boundary."
@@ -17,7 +16,7 @@ steps:
     inputs:
       frame: {ref: "frame.frame"}
     procedure:
-      - "Inspect the current state and choose a bounded next probe or decision."
+      - "Inspect the work and choose a bounded next probe or decision."
     outputs:
       next_action:
         doc: "Bounded next action and stop conditions."
@@ -67,15 +66,15 @@ steps:
     inputs:
       intervention: {ref: "intervene.intervention"}
     procedure:
-      - "Update durable evidence and state."
+      - "Record durable evidence."
     outputs:
-      durable_state:
-        doc: "Updated artifacts, decisions, unknowns, and acceptance state."
+      record:
+        doc: "Durable evidence or a reference to it."
         acceptance:
-          - "Artifacts, decisions, unknowns, and acceptance state are durable and remain distinguishable."
+          - "The evidence, decisions, and unknowns are recorded or referenced concretely."
   repeat:
     inputs:
-      durable_state: {ref: "update.durable_state"}
+      record: {ref: "update.record"}
     procedure:
       - "Repeat, stop, or accept only a scoped claim at the evidence gate."
     outputs:
