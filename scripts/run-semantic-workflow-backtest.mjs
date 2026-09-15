@@ -169,9 +169,11 @@ function aggregatorContract({ master, candidatePath, baselinePath, casePaths, re
     goal: [
       `You are the fresh aggregator for an observational semantic backtest on the ${split} split.`,
       "Read only the candidate definition, baseline definition, and bounded case results. Do not open evidence packets, raw sessions, or worker events.",
+      `The exact bounded case result path(s) you must open are: ${casePaths.join(" | ")}. There are exactly ${casePaths.length} case result(s); do not infer missing cases from candidate support-dossier counts.`,
       "Aggregate each metric without silently dropping unknowns. Separate observed trace support from causal replay evidence.",
       "Decide whether the evidence supports continue, insufficient_evidence, or a narrow candidate adjustment. Do not claim convergence from this observational backtest.",
-      `Write JSON to ${reportJsonPath}, Markdown to ${reportMarkdownPath}, and the required handoff to ${handoffPath}.`,
+      `Write JSON to ${reportJsonPath}, Markdown to ${reportMarkdownPath}, and the required handoff to ${handoffPath}. The JSON report must have top-level evaluationMode observational_trace_not_replay, split ${split}, candidate, baseline, perCase (one entry for every exact case path), aggregate with candidate/baseline/comparison metric objects, decision, limitations, and unknowns.`,
+      `The exact aggregator handoff runId is ${runId}; copy it exactly and do not use the parent runId ${master.runId}. The handoff must have schemaVersion 1, handoffType semantic-backtest-aggregation-handoff, that exact runId, status ready_for_verification, numeric caseCount ${casePaths.length}, sourceCases containing the exact case paths, split ${split}, evaluationMode observational_trace_not_replay, convergence with a non-converged status, and unknowns. Do not write the handoff until both report files exist.`,
     ].join(" "),
     projectDir: master.projectDir,
     claimBoundary: {
@@ -222,6 +224,8 @@ function aggregatorContract({ master, candidatePath, baselinePath, casePaths, re
       caseCount: casePaths.length,
       selectedSessionIds: selectedSessions.map((session) => session.id),
       outputs: [reportJsonPath, reportMarkdownPath, handoffPath],
+      expectedHandoffRunId: runId,
+      exactCasePaths: casePaths,
     },
   };
 }
