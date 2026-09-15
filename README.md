@@ -11,10 +11,9 @@ A **train** is a reusable unit of work or reasoning.
 A train is lean declarative YAML containing:
 
 - an `id`;
-- public `inputs` and `outputs`;
-- steps containing only `inputs`, `outputs`, `procedure`, and `acceptance`.
+- steps containing only `inputs`, `procedure`, and `outputs`.
 
-Bindings use `ref`, literal defaults use `value`, and source-changing results use `inplace: true`. References imply dependencies. Runner choice, context isolation, retries, paths, provenance, evidence counts, lifecycle state, and backtest bookkeeping stay outside the train YAML.
+An input or output is either documented inline with `doc` or linked with `ref`. References imply dependencies. Output acceptance checks live on the output they validate; `ref: inplace` identifies source-changing work. The first unbound inputs and final outputs form the workflow interface, so it is not declared again at the top level. Runner choice, context isolation, retries, paths, provenance, evidence counts, lifecycle state, and backtest bookkeeping stay outside the train YAML.
 
 ### Handoff
 
@@ -78,9 +77,10 @@ The human should increasingly provide intent and guidance at the highest useful 
 The first workflow establishes a deliberately small schema vocabulary:
 
 - `id` identifies a train;
-- `inputs` and `outputs` define its public bindings;
-- each step has only `inputs`, `outputs`, `procedure`, and `acceptance`;
-- `ref`, `value`, and `inplace` distinguish references, inline values, and source-changing work.
+- each step has only `inputs`, `procedure`, and `outputs`;
+- `doc` defines an input or output inline and `ref` links to another output;
+- output-local `acceptance` validates that output;
+- `ref: inplace` identifies source-changing work.
 
 Pi execution details and run evidence live beside the workflow in runners, contracts, reports, and registry records. New train fields should be added only when executable meaning cannot be represented with this core.
 

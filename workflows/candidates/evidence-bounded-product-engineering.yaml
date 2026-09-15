@@ -1,92 +1,93 @@
 id: "evidence-bounded-product-and-engineering-work-under-uncertainty"
-inputs:
-  intent: {ref: "input.intent"}
-  constraints: {value: {}}
-  current_state: {ref: "input.current_state"}
-  evidence_boundary: {ref: "input.evidence_boundary"}
-outputs:
-  scoped_result: {ref: "steps.execute.outputs.scoped_result"}
-  verification: {ref: "steps.observe.outputs.verification"}
-  durable_state: {ref: "steps.update.outputs.durable_state"}
-  decision: {ref: "steps.repeat.outputs.decision"}
-  work: {inplace: true}
 steps:
   frame:
     inputs:
-      intent: {ref: "input.intent"}
-      constraints: {ref: "input.constraints"}
-      current_state: {ref: "input.current_state"}
-      evidence_boundary: {ref: "input.evidence_boundary"}
-    outputs:
-      frame: {ref: "frame"}
+      intent: {doc: "Requested outcome."}
+      constraints: {doc: "Optional safety, scope, and environment constraints."}
+      current_state: {doc: "Current source, runtime, data, or operational state."}
+      evidence_boundary: {doc: "Evidence that may be inspected and claims it may support."}
     procedure:
       - "Frame intent, constraints, uncertainty, and the evidence boundary."
-    acceptance:
-      - "Intent, constraints, uncertainty, work mode, and evidence boundary are explicit."
+    outputs:
+      frame:
+        doc: "Intent, constraints, uncertainty, work mode, and evidence boundary."
+        acceptance:
+          - "Intent, constraints, uncertainty, work mode, and evidence boundary are explicit."
   inspect:
     inputs:
-      frame: {ref: "steps.frame.outputs.frame"}
-    outputs:
-      next_action: {ref: "next_action"}
+      frame: {ref: "frame.frame"}
     procedure:
       - "Inspect the current state and choose a bounded next probe or decision."
-    acceptance:
-      - "The next action is bounded and its stop conditions are explicit."
+    outputs:
+      next_action:
+        doc: "Bounded next action and stop conditions."
+        acceptance:
+          - "The next action is bounded and its stop conditions are explicit."
   execute:
     inputs:
-      next_action: {ref: "steps.inspect.outputs.next_action"}
-    outputs:
-      scoped_result: {ref: "scoped_result"}
-      work: {inplace: true}
+      next_action: {ref: "inspect.next_action"}
     procedure:
       - "Execute only the scoped slice."
-    acceptance:
-      - "Execution stays within scope and preserves required provenance and rollback."
+    outputs:
+      scoped_result:
+        doc: "Result of the scoped execution."
+        acceptance:
+          - "Execution stays within scope and preserves required provenance and rollback."
+      work:
+        ref: "inplace"
+        acceptance:
+          - "In-place changes stay within the declared scope."
   observe:
     inputs:
-      scoped_result: {ref: "steps.execute.outputs.scoped_result"}
-    outputs:
-      verification: {ref: "verification"}
+      scoped_result: {ref: "execute.scoped_result"}
     procedure:
       - "Observe and independently verify at the relevant boundaries."
-    acceptance:
-      - "Relevant positive, negative, runtime, and external boundaries are checked without broadening the claim."
+    outputs:
+      verification:
+        doc: "Observed evidence from the relevant boundaries."
+        acceptance:
+          - "Relevant positive, negative, runtime, and external boundaries are checked without broadening the claim."
   classify:
     inputs:
-      verification: {ref: "steps.observe.outputs.verification"}
-    outputs:
-      classification: {ref: "classification"}
+      verification: {ref: "observe.verification"}
     procedure:
       - "Classify mismatches before choosing recovery."
-    acceptance:
-      - "Blocked, partial, interrupted, and failed results retain their actual classification."
+    outputs:
+      classification:
+        doc: "Classified result, mismatch, or failure."
+        acceptance:
+          - "Blocked, partial, interrupted, and failed results retain their actual classification."
   intervene:
     inputs:
-      classification: {ref: "steps.classify.outputs.classification"}
-    outputs:
-      intervention: {ref: "intervention"}
-      work: {inplace: true}
+      classification: {ref: "classify.classification"}
     procedure:
       - "Intervene with the smallest evidence-backed change, route, or stop."
-    acceptance:
-      - "The response is the smallest change, route, check, or stop supported by evidence."
+    outputs:
+      intervention:
+        doc: "Smallest evidence-backed change, route, check, or stop."
+        acceptance:
+          - "The response is the smallest change, route, check, or stop supported by evidence."
+      work:
+        ref: "inplace"
+        acceptance:
+          - "In-place changes stay within the declared scope."
   update:
     inputs:
-      intervention: {ref: "steps.intervene.outputs.intervention"}
-    outputs:
-      durable_state: {ref: "durable_state"}
-      work: {inplace: true}
+      intervention: {ref: "intervene.intervention"}
     procedure:
       - "Update durable evidence and state."
-    acceptance:
-      - "Artifacts, decisions, unknowns, and acceptance state are durable and remain distinguishable."
+    outputs:
+      durable_state:
+        doc: "Updated artifacts, decisions, unknowns, and acceptance state."
+        acceptance:
+          - "Artifacts, decisions, unknowns, and acceptance state are durable and remain distinguishable."
   repeat:
     inputs:
-      durable_state: {ref: "steps.update.outputs.durable_state"}
-      evidence_boundary: {ref: "input.evidence_boundary"}
-    outputs:
-      decision: {ref: "decision"}
+      durable_state: {ref: "update.durable_state"}
     procedure:
       - "Repeat, stop, or accept only a scoped claim at the evidence gate."
-    acceptance:
-      - "The decision is repeat, stop, or accept_scoped_claim, and any accepted claim stays within the evidence boundary."
+    outputs:
+      decision:
+        doc: "Repeat, stop, or accept_scoped_claim."
+        acceptance:
+          - "The decision is repeat, stop, or accept_scoped_claim, and any accepted claim stays within the evidence boundary."

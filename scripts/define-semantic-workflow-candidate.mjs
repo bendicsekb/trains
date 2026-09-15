@@ -44,7 +44,7 @@ function yamlKey(key) {
 function compactBinding(value) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   const entries = Object.entries(value);
-  if (entries.length !== 1 || !["ref", "value", "inplace"].includes(entries[0][0])) return null;
+  if (entries.length !== 1 || !["doc", "ref"].includes(entries[0][0])) return null;
   const [key, item] = entries[0];
   if (item !== null && typeof item === "object") {
     if (!Array.isArray(item) && Object.keys(item).length === 0) return `{${key}: {}}`;
@@ -97,6 +97,16 @@ export function buildCandidateDefinition(report) {
 
   const ids = extracted.steps.map(stepId).map((id) => id.replace(/^\d+-/, ""));
   const outputNames = ["frame", "next_action", "scoped_result", "verification", "classification", "intervention", "durable_state", "decision"];
+  const outputDocs = [
+    "Intent, constraints, uncertainty, work mode, and evidence boundary.",
+    "Bounded next action and stop conditions.",
+    "Result of the scoped execution.",
+    "Observed evidence from the relevant boundaries.",
+    "Classified result, mismatch, or failure.",
+    "Smallest evidence-backed change, route, check, or stop.",
+    "Updated artifacts, decisions, unknowns, and acceptance state.",
+    "Repeat, stop, or accept_scoped_claim.",
+  ];
   const acceptance = [
     "Intent, constraints, uncertainty, work mode, and evidence boundary are explicit.",
     "The next action is bounded and its stop conditions are explicit.",
@@ -113,39 +123,34 @@ export function buildCandidateDefinition(report) {
     const previousOutput = index === 0 ? null : outputNames[index - 1];
     const inputs = index === 0
       ? {
-          intent: { ref: "input.intent" },
-          constraints: { ref: "input.constraints" },
-          current_state: { ref: "input.current_state" },
-          evidence_boundary: { ref: "input.evidence_boundary" },
+          intent: { doc: "Requested outcome." },
+          constraints: { doc: "Optional safety, scope, and environment constraints." },
+          current_state: { doc: "Current source, runtime, data, or operational state." },
+          evidence_boundary: { doc: "Evidence that may be inspected and claims it may support." },
         }
-      : { [previousOutput]: { ref: `steps.${ids[index - 1]}.outputs.${previousOutput}` } };
-    if (index === 7) inputs.evidence_boundary = { ref: "input.evidence_boundary" };
-    const outputs = { [outputNames[index]]: { ref: outputNames[index] } };
-    if (index === 2 || index === 5 || index === 6) outputs.work = { inplace: true };
+      : { [previousOutput]: { ref: `${ids[index - 1]}.${previousOutput}` } };
+    const outputs = {
+      [outputNames[index]]: {
+        doc: outputDocs[index],
+        acceptance: [acceptance[index]],
+      },
+    };
+    if (index === 2 || index === 5) {
+      outputs.work = {
+        ref: "inplace",
+        acceptance: ["In-place changes stay within the declared scope."],
+      };
+    }
     const procedure = `${step.name.replace(/\.$/, "")}.`;
     return [ids[index], {
       inputs,
-      outputs,
       procedure: [procedure],
-      acceptance: [acceptance[index]],
+      outputs,
     }];
   }));
 
   return {
     id: slugify(report.topic.name),
-    inputs: {
-      intent: { ref: "input.intent" },
-      constraints: { value: {} },
-      current_state: { ref: "input.current_state" },
-      evidence_boundary: { ref: "input.evidence_boundary" },
-    },
-    outputs: {
-      scoped_result: { ref: "steps.execute.outputs.scoped_result" },
-      verification: { ref: "steps.observe.outputs.verification" },
-      durable_state: { ref: "steps.update.outputs.durable_state" },
-      decision: { ref: "steps.repeat.outputs.decision" },
-      work: { inplace: true },
-    },
     steps,
   };
 }

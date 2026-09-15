@@ -1,84 +1,88 @@
 id: session-pattern-extraction
 
-inputs:
-  session_corpus: {ref: input.session_corpus}
-  target_behavior: {ref: input.target_behavior}
-  constraints: {value: {}}
-
-outputs:
-  candidate: {ref: steps.converge.outputs.candidate}
-  report: {ref: steps.converge.outputs.report}
-
 steps:
   identify:
     inputs:
-      sessions: {ref: input.session_corpus}
-      target: {ref: input.target_behavior}
-      constraints: {ref: input.constraints}
-    outputs:
-      inventory: {ref: session_inventory}
+      sessions: {doc: Readable historical sessions with stable source references.}
+      target: {doc: Recurring behavior to extract.}
+      constraints: {doc: "Optional safety, privacy, and scope constraints."}
     procedure:
       - Select relevant independent sessions and freeze development, tuning, and holdout splits before interpretation.
-    acceptance:
-      - Every selected session has a source reference, independence group, and split.
+    outputs:
+      inventory:
+        doc: Target, constraints, selected sessions, source references, independence groups, and fixed splits.
+        acceptance:
+          - Every selected session has a source reference, independence group, and split.
 
   extract:
     inputs:
-      inventory: {ref: steps.identify.outputs.inventory}
-      target: {ref: input.target_behavior}
-    outputs:
-      patterns: {ref: pattern_catalog}
+      inventory: {ref: identify.inventory}
     procedure:
       - Extract recurring triggers, actions, decisions, handoffs, outcomes, interventions, and exceptions from development sessions.
-    acceptance:
-      - Every proposed pattern states its evidence, scope, contradictions, and uncertainty.
+    outputs:
+      patterns:
+        doc: Supported, contradicted, uncertain, and rejected patterns with evidence references.
+        acceptance:
+          - Every proposed pattern states its evidence, scope, contradictions, and uncertainty.
 
   define:
     inputs:
-      patterns: {ref: steps.extract.outputs.patterns}
-      constraints: {ref: input.constraints}
-    outputs:
-      candidate: {ref: candidate_train}
-      baseline: {ref: baseline_definition}
+      patterns: {ref: extract.patterns}
     procedure:
       - Encode supported patterns as a candidate train and define the comparison baseline.
-    acceptance:
-      - The candidate has explicit step inputs, outputs, procedures, and acceptance checks.
+    outputs:
+      candidate:
+        doc: Declarative candidate train.
+        acceptance:
+          - Every step has inputs, procedure, and outputs with acceptance checks.
+      baseline:
+        doc: Fixed comparison behavior.
+        acceptance:
+          - The baseline and comparison assumptions are explicit.
 
   backtest:
     inputs:
-      candidate: {ref: steps.define.outputs.candidate}
-      baseline: {ref: steps.define.outputs.baseline}
-      tuning: {ref: steps.identify.outputs.inventory.tuning}
-    outputs:
-      report: {ref: backtest_report}
+      candidate: {ref: define.candidate}
+      baseline: {ref: define.baseline}
+      tuning: {ref: identify.inventory.tuning}
     procedure:
       - Evaluate candidate and baseline on the same unseen tuning cases and preserve failures and unknowns.
-    acceptance:
-      - Every case contains comparable candidate and baseline results without using holdout evidence.
+    outputs:
+      report:
+        doc: Comparable per-case and aggregate results.
+        acceptance:
+          - Every case contains candidate and baseline results without using holdout evidence.
 
   adjust:
     inputs:
-      candidate: {ref: steps.define.outputs.candidate}
-      report: {ref: steps.backtest.outputs.report}
-      patterns: {ref: steps.extract.outputs.patterns}
-    outputs:
-      candidate: {ref: adjusted_candidate}
-      decision: {ref: convergence_decision}
+      candidate: {ref: define.candidate}
+      report: {ref: backtest.report}
+      patterns: {ref: extract.patterns}
     procedure:
       - Classify material misses and make only the smallest repeatedly supported change.
-    acceptance:
-      - Every change names its evidence, expected effect, and regressions; otherwise the candidate is unchanged.
+    outputs:
+      candidate:
+        doc: Adjusted or unchanged candidate.
+        acceptance:
+          - Every change names its evidence, expected effect, and regressions.
+      decision:
+        doc: Repeat or freeze decision.
+        acceptance:
+          - Repeat is chosen only for an evidence-backed adjustment.
 
   converge:
     inputs:
-      candidate: {ref: steps.adjust.outputs.candidate}
-      decision: {ref: steps.adjust.outputs.decision}
-      holdout: {ref: steps.identify.outputs.inventory.holdout}
-    outputs:
-      candidate: {ref: candidate_train}
-      report: {ref: convergence_report}
+      candidate: {ref: adjust.candidate}
+      decision: {ref: adjust.decision}
+      holdout: {ref: identify.inventory.holdout}
     procedure:
       - Return the candidate for another backtest when adjustment is required; otherwise freeze it and evaluate it once on holdout.
-    acceptance:
-      - Completion requires a frozen candidate, a completed holdout evaluation, and no unsupported convergence claim.
+    outputs:
+      candidate:
+        doc: Current candidate, frozen only after convergence.
+        acceptance:
+          - A frozen candidate has completed its holdout evaluation.
+      report:
+        doc: Iteration history and convergence result.
+        acceptance:
+          - The report preserves failures and makes no unsupported convergence claim.
