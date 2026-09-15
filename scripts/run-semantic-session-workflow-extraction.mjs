@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { loadContract, supervisePi } from "/home/bendi/pi-product-factory/src/supervisor.mjs";
 import { buildSessionEvidencePacket } from "./build-session-evidence-packet.mjs";
+import { defineCandidateFromReport } from "./define-semantic-workflow-candidate.mjs";
 
 function value(argv, flag, fallback) {
   const index = argv.indexOf(flag);
@@ -401,6 +402,7 @@ async function run() {
   const dossierPaths = dossierResults.map((result) => path.resolve(projectDir, result.dossier));
   const reportJsonPath = path.join(artifactDir, "workflow-extraction.json");
   const reportMarkdownPath = path.join(artifactDir, "workflow-extraction.md");
+  const candidateTrainPath = path.join(artifactDir, "candidate-train.yaml");
   const aggregatorDir = path.join(artifactDir, "aggregator");
   const aggregatorHandoffPath = path.join(aggregatorDir, "handoff.json");
   const aggregatorContract = buildAggregatorContract({ master, runDir, artifactDir, interestPath, dossierPaths, reportJsonPath, reportMarkdownPath, handoffPath: aggregatorHandoffPath, selectedSessions });
@@ -415,6 +417,7 @@ async function run() {
     try {
       aggregatorHandoff = validateAggregatorHandoff(aggregatorHandoffPath, { expectedRunId: aggregatorContract.runId, dossierPaths });
       for (const outputPath of [reportJsonPath, reportMarkdownPath]) if (!fs.existsSync(outputPath)) throw new Error(`missing aggregator output: ${outputPath}`);
+      defineCandidateFromReport({ projectDir, reportPath: reportJsonPath, outputPath: candidateTrainPath });
     } catch (error) {
       aggregatorStatus = "escalated";
       aggregatorReason = "invalid_aggregator_handoff";
@@ -431,7 +434,7 @@ async function run() {
     selectedSessions: selectedSessions.map((session) => session.id),
     dossierCount: dossierResults.length,
     dossierResults,
-    aggregator: { status: aggregatorStatus, reason: aggregatorReason, contract: relative(projectDir, aggregatorContractPath), handoff: relative(projectDir, aggregatorHandoffPath), reportJson: relative(projectDir, reportJsonPath), reportMarkdown: relative(projectDir, reportMarkdownPath) },
+    aggregator: { status: aggregatorStatus, reason: aggregatorReason, contract: relative(projectDir, aggregatorContractPath), handoff: relative(projectDir, aggregatorHandoffPath), reportJson: relative(projectDir, reportJsonPath), reportMarkdown: relative(projectDir, reportMarkdownPath), candidateTrain: relative(projectDir, candidateTrainPath) },
     convergence: { status: "pending_backtest", extractedIn: `${dossierResults.length} fresh dossier contexts plus 1 fresh aggregator context`, backtestRequired: true },
     unknowns: ["The extracted workflow has not yet been independently backtested or compared against a baseline.", "Session-reported outcomes remain evidence from the historical traces, not fresh user-value validation."],
   };

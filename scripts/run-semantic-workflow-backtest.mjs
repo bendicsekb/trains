@@ -2,8 +2,10 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { loadContract, supervisePi } from "/home/bendi/pi-product-factory/src/supervisor.mjs";
 import { buildSessionEvidencePacket } from "./build-session-evidence-packet.mjs";
+import { buildCandidateDefinition, renderCandidateYaml } from "./define-semantic-workflow-candidate.mjs";
 
 const METRICS = [
   "task_success",
@@ -266,11 +268,22 @@ async function run() {
   const argv = process.argv.slice(2);
   const contractPath = value(argv, "--contract");
   const candidateReportPath = value(argv, "--candidate-report");
-  if (!contractPath || !candidateReportPath) throw new Error("Usage: run-semantic-workflow-backtest.mjs --contract <contract.json> --candidate-report <workflow-extraction.json> [--split tuning] [--max-sessions 8]");
+  if (!contractPath || !candidateReportPath) throw new Error("Usage: run-semantic-workflow-backtest.mjs --contract <contract.json> --candidate-report <workflow-extraction.json> [--candidate-train <candidate-train.yaml>] [--split tuning] [--max-sessions 8]");
   const masterPath = path.resolve(contractPath);
   const master = loadContract(masterPath);
   const projectDir = master.projectDir;
-  const candidateReport = readJson(path.resolve(candidateReportPath));
+  const absoluteCandidateReportPath = path.resolve(candidateReportPath);
+  const candidateReportBytes = fs.readFileSync(absoluteCandidateReportPath);
+  const candidateReport = JSON.parse(candidateReportBytes.toString("utf8"));
+  const candidatePath = path.resolve(value(argv, "--candidate-train", path.join(path.dirname(absoluteCandidateReportPath), "candidate-train.yaml")));
+  if (!fs.existsSync(candidatePath)) throw new Error(`candidate train is missing; define and verify it before backtest: ${candidatePath}`);
+  const expectedCandidate = buildCandidateDefinition(candidateReport, {
+    sourceReport: path.relative(projectDir, absoluteCandidateReportPath),
+    sourceSha256: crypto.createHash("sha256").update(candidateReportBytes).digest("hex"),
+  });
+  if (fs.readFileSync(candidatePath, "utf8") !== renderCandidateYaml(expectedCandidate)) {
+    throw new Error(`candidate train does not exactly match its extraction report: ${candidatePath}`);
+  }
   const split = value(argv, "--split", "tuning");
   if (!["tuning", "holdout"].includes(split)) throw new Error(`unsupported backtest split: ${split}`);
   const interestPath = path.resolve(value(argv, "--interest-index", path.join(projectDir, "artifacts/session-pattern-extraction/full-4-20260914/00-session-interest-index.json")));
@@ -309,17 +322,7 @@ async function run() {
   if (selectedSessions.length === 0) throw new Error(`no eligible ${split} skill-matched building sessions found`);
   if (split === "holdout" && value(argv, "--allow-holdout", "false") !== "true") throw new Error("holdout is sealed; pass --allow-holdout true only after the candidate is frozen");
 
-  const candidatePath = path.join(artifactDir, "candidate-definition.json");
   const baselinePath = path.join(artifactDir, "baseline-definition.json");
-  writeJson(candidatePath, {
-    schemaVersion: 1,
-    definitionType: "candidate-workflow-definition",
-    sourceReport: path.resolve(candidateReportPath),
-    workflow: candidateReport.extractedWorkflow,
-    additions: candidateReport.newFromSessions,
-    limitations: candidateReport.evidenceGaps,
-    evaluationBoundary: "Evaluate observed trace support only; causal replay and counterfactual outcome metrics remain unknown.",
-  });
   writeJson(baselinePath, {
     schemaVersion: 1,
     definitionType: "baseline-workflow-definition",
@@ -424,6 +427,7 @@ async function run() {
     split,
     evaluationMode: "observational_trace_not_replay",
     selectionManifest: relative(projectDir, manifestPath),
+    candidateReport: relative(projectDir, absoluteCandidateReportPath),
     candidateDefinition: relative(projectDir, candidatePath),
     baselineDefinition: relative(projectDir, baselinePath),
     selectedSessions: selectedSessions.map((session) => session.id),

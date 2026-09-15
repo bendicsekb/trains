@@ -2,6 +2,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
+import { buildCandidateDefinition, renderCandidateYaml } from "./define-semantic-workflow-candidate.mjs";
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
@@ -81,6 +83,7 @@ function validateAggregator({ projectDir, result }) {
   assert(result.aggregator?.status === "needs_verification", "aggregator supervisor did not finish cleanly");
   const reportJsonPath = file(projectDir, result.aggregator.reportJson);
   const reportMarkdownPath = file(projectDir, result.aggregator.reportMarkdown);
+  const candidateTrainPath = file(projectDir, result.aggregator.candidateTrain);
   const handoffPath = file(projectDir, result.aggregator.handoff);
   const contractPath = file(projectDir, result.aggregator.contract);
   const report = readJson(reportJsonPath);
@@ -103,13 +106,20 @@ function validateAggregator({ projectDir, result }) {
   assert(handoff.convergence?.status === "not_converged" || (/not (?:validated|converged)/.test(normalizedHandoffClaims) && /backtest[^\n]{0,100}pending/.test(normalizedHandoffClaims)), "aggregator handoff does not preserve non-convergence");
   assert(Array.isArray(contract.sourceOfTruth) && contract.sourceOfTruth.every((source) => !source.endsWith(".jsonl")), "aggregator contract exposes raw session source");
   assert(fs.readFileSync(reportMarkdownPath, "utf8").includes("## Backtest plan"), "Markdown report lacks backtest section");
+  const reportBytes = fs.readFileSync(reportJsonPath);
+  const expectedCandidate = buildCandidateDefinition(report, {
+    sourceReport: path.relative(projectDir, reportJsonPath),
+    sourceSha256: crypto.createHash("sha256").update(reportBytes).digest("hex"),
+  });
+  assert(fs.readFileSync(candidateTrainPath, "utf8") === renderCandidateYaml(expectedCandidate), "candidate train is not the deterministic definition of the verified extraction report");
+  assert(expectedCandidate.status === "candidate" && expectedCandidate.maturity === "observed_not_validated", "candidate train overclaims maturity");
 
   const eventsPath = path.join(path.dirname(contractPath), "events.ndjson");
   const events = fs.readFileSync(eventsPath, "utf8").split("\n").filter(Boolean).map(JSON.parse);
   const supervisorStart = events.find((event) => event.type === "supervisor_started");
   assert(supervisorStart?.payload?.args?.includes("--no-session"), `aggregator was not launched with --no-session: ${eventsPath}`);
   assert(eventTypes(events).includes("supervisor_finished"), `aggregator has no supervisor_finished event: ${eventsPath}`);
-  return { reportJsonPath, reportMarkdownPath, handoffPath, contractPath, eventsPath, eventCount: events.length };
+  return { reportJsonPath, reportMarkdownPath, candidateTrainPath, handoffPath, contractPath, eventsPath, eventCount: events.length };
 }
 
 function main() {

@@ -69,6 +69,12 @@ outputs:
   semantic_workflow_extraction:
     type: artifact-set
     description: Aggregated JSON and Markdown workflow report comparing session-derived behavior with the prior workflow idea; backtest remains pending.
+  semantic_candidate_train:
+    type: train
+    description: Deterministically defined YAML candidate derived from the verified semantic extraction report; registration does not imply convergence.
+  candidate_registry:
+    type: artifact-set
+    description: Versioned candidate trains that passed extraction verification, including maturity and provenance; registration requires no separate human approval.
   semantic_extraction_handoff:
     type: artifact
     description: Aggregator handoff recording dossier support, evidence boundaries, unknowns, and non-convergence.
@@ -136,8 +142,10 @@ execution:
       - On failure, record an attempt result, fix the contract or verifier, and rerun in a fresh numbered attempt directory.
       - Run one fresh dossier context per selected development session; only bounded dossiers cross into the aggregator.
       - Keep raw sessions and worker event ledgers out of the aggregator context.
+      - Deterministically encode the aggregated workflow as a versioned candidate YAML and verify it against the extraction report before registry promotion.
+      - After extraction verification passes, register the candidate under workflows/candidates without asking for a separate approval; escalate only on an incompatible identifier or version collision.
       - Leave backtest and convergence explicitly pending until a separate held-out train evaluates the extracted workflow.
-    outputs: [semantic_session_dossiers, semantic_workflow_extraction, semantic_extraction_handoff]
+    outputs: [semantic_session_dossiers, semantic_workflow_extraction, semantic_candidate_train, candidate_registry, semantic_extraction_handoff]
   semantic_backtest:
     runner: scripts/run-semantic-workflow-backtest.mjs
     verifier: scripts/verify-semantic-workflow-backtest.mjs
@@ -200,6 +208,7 @@ steps:
       - Add a failure path for every known high-cost or safety-relevant failure mode.
       - Keep assumptions and untested rules in the candidate's open-questions section.
       - Version the candidate before any replay and record the exact evidence snapshot used to create it.
+      - Register a verified definition as an official candidate without conflating candidate registration with validation or convergence.
     outputs: [candidate_train, baseline_definition]
     acceptance:
       - Another executor can identify what starts the train, what it must produce, and when it must stop.

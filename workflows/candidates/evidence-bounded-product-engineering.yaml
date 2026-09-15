@@ -1,0 +1,333 @@
+version: "0.1.0"
+kind: "train"
+id: "evidence-bounded-product-and-engineering-work-under-uncertainty"
+name: "Evidence-bounded product and engineering work under uncertainty"
+status: "candidate"
+maturity: "observed_not_validated"
+purpose: "Across the declared dossiers, product/building work is most consistently represented as a claim-bounded loop: frame the problem and constraints, inspect the current boundary, choose a reversible next probe or slice, execute only within scope, verify independently at the relevant boundaries, classify failures and interventions, update durable evidence, and iterate, stop, or accept only the claim that the evidence supports."
+scope: "This is an abstract cross-session workflow extraction, not a domain-specific product recipe. The dossiers cover web research, infrastructure, authentication, analytics, interaction experiments, model selection, RCA, and read-only audits."
+provenance:
+  sourceReport: ".factory/runs/session-workflow-extraction-expanded-20260915/extraction-artifacts/attempt-010/workflow-extraction.json"
+  sourceSha256: "4087868a6e6f87b529ce695b802736771a1766578b783a356f3009827d8b5904"
+  parentRunId: "session-workflow-extraction-expanded-20260915"
+  sourceDossierCount: 10
+  selectedHumanMessages: 121
+  extractionStatus: "candidate_observed_not_validated"
+inputs:
+  intent:
+    type: "string"
+    required: true
+  constraints:
+    type: "object"
+    required: false
+    default: {}
+  currentState:
+    type: "artifact-set"
+    required: true
+  evidenceBoundary:
+    type: "object"
+    required: true
+outputs:
+  scopedResult:
+    type: "artifact"
+  verificationRecord:
+    type: "artifact"
+  durableStateUpdate:
+    type: "artifact"
+  decision:
+    type: "enum"
+    values:
+      - "repeat"
+      - "stop"
+      - "accept_scoped_claim"
+steps:
+  -
+    id: "01-frame"
+    name: "Frame intent, constraints, uncertainty, and the evidence boundary"
+    needs: []
+    procedure:
+      - "State the user problem and requested outcome, map hard constraints, distinguish what is known from unknown, and define whether the work is implementation, preparation, diagnosis, or read-only audit."
+    evidence:
+      supportCount: 10
+      supportDossiers:
+        - "01"
+        - "02"
+        - "03"
+        - "04"
+        - "05"
+        - "06"
+        - "07"
+        - "08"
+        - "09"
+        - "10"
+    acceptance:
+      - "The output and remaining unknowns are explicit before the next step begins."
+  -
+    id: "02-inspect"
+    name: "Inspect the current state and choose a bounded next probe or decision"
+    needs:
+      - "01-frame"
+    procedure:
+      - "Inspect the relevant repository, runtime, data, route, device, provider, or ledger boundary before committing to a solution. Choose a narrow, reversible, or otherwise explicitly bounded next action with stop conditions where the dossier records them."
+    evidence:
+      supportCount: 10
+      supportDossiers:
+        - "01"
+        - "02"
+        - "03"
+        - "04"
+        - "05"
+        - "06"
+        - "07"
+        - "08"
+        - "09"
+        - "10"
+    acceptance:
+      - "The output and remaining unknowns are explicit before the next step begins."
+  -
+    id: "03-execute"
+    name: "Execute only the scoped slice"
+    needs:
+      - "02-inspect"
+    procedure:
+      - "Implement a local or reversible slice when the scope permits; otherwise continue with bounded inspection or planning. Preserve provenance, semantics, data, rollback, and the declared source of truth rather than silently bypassing constraints."
+    evidence:
+      supportCount: 10
+      supportDossiers:
+        - "01"
+        - "02"
+        - "03"
+        - "04"
+        - "05"
+        - "06"
+        - "07"
+        - "08"
+        - "09"
+        - "10"
+    acceptance:
+      - "The output and remaining unknowns are explicit before the next step begins."
+  -
+    id: "04-observe"
+    name: "Observe and independently verify at the relevant boundaries"
+    needs:
+      - "03-execute"
+    procedure:
+      - "Use more than process exit or local unit tests: check artifacts, runtime/deployment, external/device/authenticated paths, data quality, and negative or failure cases as applicable. Keep edge reachability, component health, system behavior, and user-value claims separate."
+    evidence:
+      supportCount: 10
+      supportDossiers:
+        - "01"
+        - "02"
+        - "03"
+        - "04"
+        - "05"
+        - "06"
+        - "07"
+        - "08"
+        - "09"
+        - "10"
+    acceptance:
+      - "The output and remaining unknowns are explicit before the next step begins."
+  -
+    id: "05-classify"
+    name: "Classify mismatches before choosing recovery"
+    needs:
+      - "04-observe"
+    procedure:
+      - "Separate source-access, provider, runtime, parser, deployment, identity, hardware, model-choice, platform, and user-workflow causes where the dossier provides that distinction. Preserve a zero, blocked, partial, or interrupted result as a result rather than converting it to success."
+    evidence:
+      supportCount: 10
+      supportDossiers:
+        - "01"
+        - "02"
+        - "03"
+        - "04"
+        - "05"
+        - "06"
+        - "07"
+        - "08"
+        - "09"
+        - "10"
+    acceptance:
+      - "The output and remaining unknowns are explicit before the next step begins."
+  -
+    id: "06-intervene"
+    name: "Intervene with the smallest evidence-backed change, route, or stop"
+    needs:
+      - "05-classify"
+    procedure:
+      - "Respond to negative evidence, user feedback, gates, and environmental limits by changing the relevant variable, changing acquisition/verification route, adding a regression or failure-mode check, or stopping when the safety/claim boundary is not met."
+    evidence:
+      supportCount: 10
+      supportDossiers:
+        - "01"
+        - "02"
+        - "03"
+        - "04"
+        - "05"
+        - "06"
+        - "07"
+        - "08"
+        - "09"
+        - "10"
+    acceptance:
+      - "The output and remaining unknowns are explicit before the next step begins."
+  -
+    id: "07-update"
+    name: "Update durable evidence and state"
+    needs:
+      - "06-intervene"
+    procedure:
+      - "Record artifacts, decisions, flags, unknowns, provenance, source-of-truth changes, and the current acceptance status. Keep incompatible datasets or evidence paths separate instead of merging them into one stronger claim."
+    evidence:
+      supportCount: 9
+      supportDossiers:
+        - "01"
+        - "02"
+        - "04"
+        - "05"
+        - "06"
+        - "07"
+        - "08"
+        - "09"
+        - "10"
+    acceptance:
+      - "The output and remaining unknowns are explicit before the next step begins."
+  -
+    id: "08-repeat"
+    name: "Repeat, stop, or accept only a scoped claim at the evidence gate"
+    needs:
+      - "07-update"
+    procedure:
+      - "Re-run the same experiment or a clearly identified next slice after remediation, or leave the work blocked/pending. Acceptance is scoped to the evidence boundary; no dossier supports calling the extracted workflow validated, converged, superior, or backtested."
+    evidence:
+      supportCount: 9
+      supportDossiers:
+        - "01"
+        - "02"
+        - "04"
+        - "05"
+        - "06"
+        - "07"
+        - "08"
+        - "09"
+        - "10"
+    acceptance:
+      - "The terminal decision and its claim boundary are explicit."
+routing:
+  sequential:
+    - "01-frame"
+    - "02-inspect"
+    - "03-execute"
+    - "04-observe"
+    - "05-classify"
+    - "06-intervene"
+    - "07-update"
+    - "08-repeat"
+  terminal:
+    repeat: "02-inspect"
+    stop: "complete"
+    accept_scoped_claim: "complete"
+claimBoundary:
+  mayClaim:
+    - "The workflow is a versioned candidate observed in the declared development dossiers."
+    - "Individual steps have the support counts recorded in this definition."
+  mayNotClaim:
+    - "The workflow is converged, causally superior, or proven to improve task success."
+    - "Historical process traces establish user value or product success."
+validation:
+  extraction: "verified_before_registry_promotion"
+  backtestMode: "observational_trace_not_replay"
+  backtestStatus: "insufficient_evidence"
+  convergence: "not_converged"
+  holdout: "sealed"
+newObservedPatterns:
+  -
+    pattern: "Claim boundaries and evidence provenance are first-class workflow objects, not just uncertainty notes."
+    supportCount: 10
+    supportDossiers:
+      - "01"
+      - "02"
+      - "03"
+      - "04"
+      - "05"
+      - "06"
+      - "07"
+      - "08"
+      - "09"
+      - "10"
+  -
+    pattern: "The path branches before implementation: read-only diagnosis, operational preparation, or implementation can each be the correct scoped action."
+    supportCount: 10
+    supportDossiers:
+      - "01"
+      - "02"
+      - "03"
+      - "04"
+      - "05"
+      - "06"
+      - "07"
+      - "08"
+      - "09"
+      - "10"
+  -
+    pattern: "Failure taxonomy and negative-case evidence guide recovery."
+    supportCount: 10
+    supportDossiers:
+      - "01"
+      - "02"
+      - "03"
+      - "04"
+      - "05"
+      - "06"
+      - "07"
+      - "08"
+      - "09"
+      - "10"
+  -
+    pattern: "User feedback and environmental constraints can change the hypothesis, route, or acceptance condition rather than merely confirm the original plan."
+    supportCount: 10
+    supportDossiers:
+      - "01"
+      - "02"
+      - "03"
+      - "04"
+      - "05"
+      - "06"
+      - "07"
+      - "08"
+      - "09"
+      - "10"
+  -
+    pattern: "Durable source-of-truth updates are part of recovery and handoff."
+    supportCount: 9
+    supportDossiers:
+      - "01"
+      - "02"
+      - "04"
+      - "05"
+      - "06"
+      - "07"
+      - "08"
+      - "09"
+      - "10"
+  -
+    pattern: "Bounded parallel review is a recurring tactic, but not a required universal step."
+    supportCount: 7
+    supportDossiers:
+      - "01"
+      - "02"
+      - "04"
+      - "05"
+      - "07"
+      - "09"
+      - "10"
+openQuestions:
+  - "Whether the extracted workflow improves outcomes, reduces rework, or reduces unsupported claims compared with the prior idea or an ordinary baseline."
+  - "Whether support counts persist in held-out sessions or other task domains; the current ten are a selected development subset."
+  - "Whether the workflow's added claim-boundary and failure-classification steps justify their time and coordination cost."
+  - "Whether reviewers can apply the abstract workflow consistently, especially to read-only audits, high-risk migrations, and partial user-workflow acceptance."
+  - "Whether any session-derived pattern predicts user value, product success, recommendation quality, or production reliability."
+  - "The full content of raw sessions, worker events, private reasoning, and any unprepared holdout dossiers; these were outside the permitted read boundary."
+  - "Whether the count of two explicit-hypothesis dossiers would change under a different dossier schema or coding rule."
+  - "Whether durable record updates were complete and source-of-truth-correct in every session; dossier 03 ended before a final close."
