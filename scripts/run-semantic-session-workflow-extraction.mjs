@@ -34,9 +34,10 @@ function boundaryCheck(boundary, pattern, safeTextPattern) {
     : Object.entries(boundary ?? {}).map(([name, value]) => `${name}: ${String(value)}`).join("\n");
   const lines = allText.split(/[\n.;]+/).filter(Boolean);
   const positive = /\b(?:opened|read|copied|included|accessed|exposed)\b/i;
+  const negative = /\b(?:no|not|never|without|did not|was not|were not)\b/i;
   return {
-    hasSafe: entries.some(([, value]) => value === false) || safeTextPattern.test(allText),
-    hasTrue: entries.some(([, value]) => value === true) || lines.some((line) => pattern.test(line) && positive.test(line) && !safeTextPattern.test(line)),
+    hasSafe: entries.some(([, value]) => value === false) || safeTextPattern.test(allText) || lines.some((line) => pattern.test(line) && negative.test(line)),
+    hasTrue: entries.some(([, value]) => value === true) || lines.some((line) => pattern.test(line) && positive.test(line) && !negative.test(line)),
   };
 }
 
