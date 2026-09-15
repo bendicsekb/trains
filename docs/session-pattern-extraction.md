@@ -6,7 +6,23 @@ This document explains how to execute `session-pattern-extraction.yaml`. It is i
 
 Before Pi interprets a corpus, run `scripts/build-session-corpus-index.mjs` once against every declared session root. The index is the default input for discovery and contains structural metadata and hashes, not copied transcript text. This keeps a multi-gigabyte corpus out of one model context and makes the snapshot auditable. Then run `scripts/build-session-interest-index.mjs` against that frozen index. It reads each source only through the index snapshot cutoff and emits metadata for selecting interesting sessions: human-message count, explicit product-factory/product-factory-pi signals, and a bounded building classification. It strips synthetic Codex context and does not retain message text.
 
-The interest scan is a discovery signal, not a semantic outcome label. “Likely building” means the session contains observable combinations such as file editing plus command execution, or implementation language plus editing/commands. It must be checked by the discovery worker against the selected source boundary before being promoted to a workflow pattern. The first Pi train run remains structural-only; broader semantic raw-session access is a separate experiment that requires its own bounded, allowlisted contract.
+The interest scan is a discovery signal, not a semantic outcome label. “Likely building” means the session contains observable combinations such as file editing plus command execution, or implementation language plus editing/commands. It must be checked by the discovery worker against the selected source boundary before being promoted to a workflow pattern. The structural chain remains structural-only; semantic extraction is a separate experiment with its own bounded, allowlisted contract.
+
+## Bounded semantic extraction
+
+Run `scripts/run-semantic-session-workflow-extraction.mjs` only after the frozen interest index exists. The runner selects development-split sessions with an explicit `product-factory` or `product-factory-pi` signal and `likely_building`/`possibly_building` evidence, then deduplicates by independence group. It deterministically reads each selected source once to create a clipped, secret-redacted evidence packet; the Pi dossier worker reads that packet, not the raw transcript. This keeps semantic judgment in a fresh context without asking the model to navigate multi-megabyte session logs.
+
+Each selected session gets a fresh supervised Pi `--no-session` dossier context. The aggregator is another fresh `--no-session` context whose declared inputs are only the interest index and bounded dossiers. It must compare the session-derived workflow with the prior idea, report support counts and contradictions, and leave backtesting/convergence pending. It may not reopen raw sessions or worker events.
+
+The runner writes `attempt-001`, `attempt-002`, and so on under the run directory and artifact directory. A failed attempt writes an explicit `result.json`; the next attempt starts from clean worker ledgers rather than appending to a partial run. The reliability loop is:
+
+1. Run a one-session canary.
+2. Inspect the failed phase and artifact, then adjust the runner contract or verifier.
+3. Rerun in a new attempt directory until the canary passes independently.
+4. Run the selected multi-session extraction.
+5. Run `scripts/verify-semantic-session-workflow-extraction.mjs` against the accepted result.
+
+The verifier is intentionally separate from Pi. It checks bounded packet/dossier sizes, required sections, explicit boundary assertions, report support-count bounds, pending backtest status, and `--no-session` in every supervisor launch. A successful extraction is not convergence; it is the input to the next backtest train.
 
 ## Pi execution and context boundaries
 

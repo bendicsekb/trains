@@ -63,6 +63,15 @@ outputs:
   analysis_handoff:
     type: artifact
     description: The validated handoff from the fresh post-run analyst context.
+  semantic_session_dossiers:
+    type: artifact-set
+    description: Bounded, clipped, redacted semantic dossiers produced by fresh Pi contexts for selected development sessions.
+  semantic_workflow_extraction:
+    type: artifact-set
+    description: Aggregated JSON and Markdown workflow report comparing session-derived behavior with the prior workflow idea; backtest remains pending.
+  semantic_extraction_handoff:
+    type: artifact
+    description: Aggregator handoff recording dossier support, evidence boundaries, unknowns, and non-convergence.
 
 parameters:
   min_independent_support: 3
@@ -113,6 +122,19 @@ execution:
       - Summarize the run topic, exact session and execution statistics, extracted workflow, new versus matched patterns, and convergence iterations.
       - Keep semantic topics, task outcomes, and executable success unknown when the input boundary is structural-only.
       - Write both a machine-readable JSON report and a concise Markdown report, then validate the analyst handoff.
+  semantic_extraction:
+    runner: scripts/run-semantic-session-workflow-extraction.mjs
+    verifier: scripts/verify-semantic-session-workflow-extraction.mjs
+    context_boundary: fresh-pi-rpc-process-per-session-and-aggregator
+    session_mode: --no-session
+    input_boundary: bounded-evidence-packet-derived-from-one-selected-session
+    procedure:
+      - Run a one-session canary and independently verify the complete dossier-to-aggregator path before fan-out.
+      - On failure, record an attempt result, fix the contract or verifier, and rerun in a fresh numbered attempt directory.
+      - Run one fresh dossier context per selected development session; only bounded dossiers cross into the aggregator.
+      - Keep raw sessions and worker event ledgers out of the aggregator context.
+      - Leave backtest and convergence explicitly pending until a separate held-out train evaluates the extracted workflow.
+    outputs: [semantic_session_dossiers, semantic_workflow_extraction, semantic_extraction_handoff]
 
 steps:
   - id: identify-sessions

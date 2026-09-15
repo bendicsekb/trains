@@ -63,6 +63,8 @@ The post-run report is [scripts/run-session-pattern-extraction-summary.mjs](scri
 
 Discovery now ranks sessions using a frozen-snapshot interest index: canonical human-message count, explicit `product-factory` / `product-factory-pi` references, and observable building signals. Synthetic Codex context and embedded review transcripts are excluded from the human count. The scan stores no message text.
 
+The bounded semantic follow-up is [scripts/run-semantic-session-workflow-extraction.mjs](scripts/run-semantic-session-workflow-extraction.mjs). It selects development-split sessions with those historical signals and observable building activity, creates a clipped/redacted evidence packet for each source, runs one fresh Pi dossier context per session, and hands only the dossiers to a fresh aggregator. Each retry gets a numbered attempt directory. Verify a completed run with [scripts/verify-semantic-session-workflow-extraction.mjs](scripts/verify-semantic-session-workflow-extraction.mjs); the verifier checks artifact shape, boundedness, handoff boundaries, and `--no-session` isolation independently.
+
 The workflow must preserve evidence links for every extracted rule. A pattern is not promoted merely because it appears often: the candidate must also make the observed outcome easier to reproduce, avoid material regressions against the baseline, and expose uncertainty instead of silently generalising an exception.
 
 ## Goal
