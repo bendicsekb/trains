@@ -19,6 +19,16 @@ The workflow is executed as a chain of trains, not as one long Pi conversation. 
 
 The only state that crosses the boundary is the previous stage's declared JSON handoff plus the source artifacts explicitly listed in the next contract. A stage must not read another stage's events, contract, handoff, or private reasoning. The handoff records decisions, evidence references, unknowns, claims not made, and the next route. Stages 4–6 repeat with fresh contexts until the convergence handoff returns a terminal status.
 
+## Post-run executive analysis
+
+Once the chain has a terminal result, the runner starts one independent post-run analyst in a new `--no-session` Pi context. The analyst is not another extraction or backtest stage. It reads the completed chain result, chain event ledger, stage handoffs, declared workflow files, and output artifacts, then writes:
+
+- `executive-summary.json` with machine-readable topic, statistics, extracted workflow, `newPatterns`, `matchedExisting`, convergence, and unknowns fields;
+- `executive-summary.md` with the founder-facing summary;
+- an analyst handoff recording the evidence boundary and report outputs.
+
+The analyst must distinguish observed facts, bounded structural inferences, and unknowns. The current first run deliberately indexed structure without copying transcript text, so its per-session semantic topics and outcome metrics remain unknown. A future semantic extraction mode must add a separate, allowlisted input contract before those fields can be populated.
+
 ## What counts as a useful extraction
 
 The output is not a summary of the sessions. It is a candidate procedure that another agent can follow from the same starting context. Each promoted rule should answer:

@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { loadContract, supervisePi } from "/home/bendi/pi-product-factory/src/supervisor.mjs";
+import { runExecutiveSummary } from "./run-session-pattern-extraction-summary.mjs";
 
 function value(argv, flag, fallback) {
   const index = argv.indexOf(flag);
@@ -15,6 +16,7 @@ function usage() {
   run-session-pattern-extraction-chain.mjs --contract <contract.json>
     [--stall-ms 300000] [--stage-runtime-ms 1800000]
     [--chain-dir <dir>] [--artifact-dir <dir>]
+    [--no-analyst] [--analyst-runtime-ms 900000]
     [--node <node>] [--pi-cli <cli.js>] [--agent-dir <dir>]
     [--provider openai-codex] [--model gpt-5.6-luna] [--thinking xhigh]`);
 }
@@ -44,6 +46,7 @@ if (!contractPath) {
   const extension = "/home/bendi/pi-product-factory/extensions/factory.js";
   const stallMs = Number(value(argv, "--stall-ms", "300000"));
   const stageRuntimeMs = Number(value(argv, "--stage-runtime-ms", "1800000"));
+  const analystRuntimeMs = Number(value(argv, "--analyst-runtime-ms", "900000"));
   const maxIterations = Number(master.metadata?.maxIterations ?? 6);
 
   const stages = [
@@ -380,6 +383,42 @@ if (!contractPath) {
   };
   writeJson(chainResultPath, result);
   appendEvent("chain_finished", { status, iterations: iterationsRun, stages: results.length, finalHandoff: relative(previousHandoffPath) });
+
+  if (!argv.includes("--no-analyst")) {
+    appendEvent("post_run_analysis_started", { input: relative(chainResultPath) });
+    try {
+      const analysis = await runExecutiveSummary({
+        masterContractPath,
+        chainDir,
+        artifactDir,
+        node,
+        piCli,
+        agentDir,
+        provider: value(argv, "--provider", "openai-codex"),
+        model: value(argv, "--model", "gpt-5.6-luna"),
+        thinking: value(argv, "--thinking", "xhigh"),
+        stallMs,
+        runtimeMs: analystRuntimeMs,
+      });
+      result.postRunAnalysis = {
+        status: analysis.status,
+        reason: analysis.reason,
+        contract: relative(analysis.contractPath),
+        handoff: relative(analysis.handoffPath),
+        summaryJson: relative(analysis.summaryJsonPath),
+        summaryMarkdown: relative(analysis.summaryMarkdownPath),
+      };
+      appendEvent("post_run_analysis_finished", result.postRunAnalysis);
+    } catch (error) {
+      result.postRunAnalysis = {
+        status: "escalated",
+        reason: error.message,
+      };
+      appendEvent("post_run_analysis_escalated", result.postRunAnalysis);
+    }
+    writeJson(chainResultPath, result);
+  }
+
   console.log(JSON.stringify(result, null, 2));
-  process.exitCode = status === "escalated" ? 1 : 0;
+  process.exitCode = status === "escalated" || result.postRunAnalysis?.status === "escalated" ? 1 : 0;
 }

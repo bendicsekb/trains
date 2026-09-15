@@ -54,6 +54,12 @@ outputs:
   chain_result:
     type: artifact
     description: The orchestrator's terminal status, per-stage supervisor results, and remaining unknowns.
+  executive_summary:
+    type: artifact-set
+    description: A post-run analyst's JSON and Markdown executive report over the completed chain logs and artifacts.
+  analysis_handoff:
+    type: artifact
+    description: The validated handoff from the fresh post-run analyst context.
 
 parameters:
   min_independent_support: 3
@@ -93,6 +99,17 @@ execution:
     loop-until-converged:
       continue: backtest
       terminal: complete
+  post_run_analysis:
+    after: loop-until-converged
+    context_boundary: fresh-pi-rpc-process
+    session_mode: --no-session
+    inputs: [chain_result, stage_handoffs, backtest_report, convergence_record]
+    outputs: [executive_summary, analysis_handoff]
+    procedure:
+      - Read only the completed chain result, chain event ledger, declared stage handoffs, workflow definition, and output artifacts.
+      - Summarize the run topic, exact session and execution statistics, extracted workflow, new versus matched patterns, and convergence iterations.
+      - Keep semantic topics, task outcomes, and executable success unknown when the input boundary is structural-only.
+      - Write both a machine-readable JSON report and a concise Markdown report, then validate the analyst handoff.
 
 steps:
   - id: identify-sessions

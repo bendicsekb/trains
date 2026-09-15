@@ -80,6 +80,29 @@ if (fs.existsSync(resultPath)) {
   const result = JSON.parse(fs.readFileSync(resultPath, "utf8"));
   check("chain-result", result.runId === contract.runId && typeof result.status === "string" && Array.isArray(result.stages), "chain result is structurally valid");
   check("result-boundary", result.contextBoundary === "fresh Pi --no-session process per stage; inter-stage state crosses only through declared JSON handoffs", "chain result records context boundary");
+  if (result.postRunAnalysis) {
+    const analysis = result.postRunAnalysis;
+    check("post-run-analysis-status", analysis.status !== "escalated", "post-run analyst did not escalate");
+    for (const field of ["contract", "handoff", "summaryJson", "summaryMarkdown"]) {
+      const target = typeof analysis[field] === "string" ? path.resolve(contract.projectDir, analysis[field]) : null;
+      check(`post-run-analysis-path:${field}`, Boolean(target && fs.existsSync(target)), `${field} output exists`);
+    }
+    if (typeof analysis.handoff === "string") {
+      const analystHandoffPath = path.resolve(contract.projectDir, analysis.handoff);
+      if (fs.existsSync(analystHandoffPath)) {
+        try {
+          const handoff = JSON.parse(fs.readFileSync(analystHandoffPath, "utf8"));
+          const required = ["schemaVersion", "runId", "step", "status", "inputsRead", "outputsWritten", "evidenceRefs", "decisions", "openQuestions", "nextStep", "claimsNotMade"];
+          check("post-run-analysis-handoff", required.every((field) => field in handoff)
+            && handoff.schemaVersion === 1
+            && handoff.runId === `${contract.runId}-analyst`
+            && handoff.step === "post-run-analysis", "analyst handoff is valid");
+        } catch (error) {
+          check("post-run-analysis-handoff", false, error.message);
+        }
+      }
+    }
+  }
 }
 
 const output = { overall_pass: failures.length === 0, checks, failure_count: failures.length, failures };
