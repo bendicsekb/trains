@@ -287,8 +287,21 @@ async function run() {
   const thinking = value(argv, "--thinking", "xhigh");
   const stallMs = Number(value(argv, "--stall-ms", "300000"));
   const runtimeMs = Number(value(argv, "--runtime-ms", "1200000"));
+  const reuseCaseAttemptArg = value(argv, "--reuse-case-attempt", undefined);
   const interest = readJson(interestPath);
-  const selectedSessions = selectSessions(interest, split, maxSessions);
+  let selectedSessions;
+  let reuseCaseAttempt = null;
+  if (reuseCaseAttemptArg !== undefined) {
+    reuseCaseAttempt = path.resolve(reuseCaseAttemptArg);
+    const reuseAttemptLabel = path.basename(reuseCaseAttempt);
+    const reuseManifestPath = path.join(attemptRoot, reuseAttemptLabel, "selection-manifest.json");
+    if (!fs.existsSync(reuseManifestPath)) throw new Error(`cannot reuse case attempt without selection manifest: ${reuseManifestPath}`);
+    const reuseManifest = readJson(reuseManifestPath);
+    selectedSessions = reuseManifest.selectedSessions;
+    if (!Array.isArray(selectedSessions) || selectedSessions.length === 0) throw new Error(`reused case attempt has no selected sessions: ${reuseManifestPath}`);
+  } else {
+    selectedSessions = selectSessions(interest, split, maxSessions);
+  }
   if (selectedSessions.length === 0) throw new Error(`no eligible ${split} skill-matched building sessions found`);
   if (split === "holdout" && value(argv, "--allow-holdout", "false") !== "true") throw new Error("holdout is sealed; pass --allow-holdout true only after the candidate is frozen");
 
@@ -326,7 +339,21 @@ async function run() {
 
   const piArgs = [piCli, "--mode", "rpc", "--no-session", "--provider", provider, "--model", model, "--thinking", thinking, "--extension", "/home/bendi/pi-product-factory/extensions/factory.js"];
   const caseResults = [];
-  for (let index = 0; index < selectedSessions.length; index += 1) {
+  if (reuseCaseAttempt) {
+    for (let index = 0; index < selectedSessions.length; index += 1) {
+      const session = selectedSessions[index];
+      const workerDir = path.join(reuseCaseAttempt, "cases", `${String(index + 1).padStart(2, "0")}-${session.id}`);
+      const evidencePacketPath = path.join(workerDir, "evidence-packet.json");
+      const casePath = path.join(workerDir, "case.json");
+      const handoffPath = path.join(workerDir, "handoff.json");
+      const workerContractPath = path.join(workerDir, "contract.json");
+      if (!fs.existsSync(workerContractPath)) throw new Error(`cannot reuse case without worker contract: ${workerContractPath}`);
+      const workerContractData = readJson(workerContractPath);
+      validateCaseHandoff(handoffPath, { expectedRunId: workerContractData.runId, expectedSessionId: session.id, casePath, evidencePacketPath });
+      if (!fs.existsSync(casePath)) throw new Error(`missing reused case result: ${casePath}`);
+      caseResults.push({ sessionId: session.id, sourceReference: session.sourceReference, case: relative(projectDir, casePath), handoff: relative(projectDir, handoffPath), supervisorStatus: "needs_verification", reason: null, handoffStatus: "ready_for_verification", reusedFrom: relative(projectDir, reuseCaseAttempt) });
+    }
+  } else for (let index = 0; index < selectedSessions.length; index += 1) {
     const session = selectedSessions[index];
     const workerDir = path.join(caseDir, `${String(index + 1).padStart(2, "0")}-${session.id}`);
     const evidencePacketPath = path.join(workerDir, "evidence-packet.json");
