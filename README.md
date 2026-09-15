@@ -8,15 +8,13 @@ A small framework for turning recurring agent work and reasoning into explicit, 
 
 A **train** is a reusable unit of work or reasoning.
 
-A train is defined declaratively, initially as YAML, with a GitHub-CI-like structure. It may define:
+A train is lean declarative YAML containing:
 
-- inputs;
-- outputs / handoffs;
-- steps;
-- dependencies;
-- other trains it invokes or depends on.
+- an `id`;
+- public `inputs` and `outputs`;
+- steps containing only `inputs`, `outputs`, `procedure`, and `acceptance`.
 
-The exact schema is intentionally not fixed yet.
+Bindings use `ref`, literal defaults use `value`, and source-changing results use `inplace: true`. References imply dependencies. Runner choice, context isolation, retries, paths, provenance, evidence counts, lifecycle state, and backtest bookkeeping stay outside the train YAML.
 
 ### Handoff
 
@@ -79,13 +77,11 @@ The human should increasingly provide intent and guidance at the highest useful 
 
 The first workflow establishes a deliberately small schema vocabulary:
 
-- `version`, `kind`, and `id` identify a train;
-- `inputs` and `outputs` define the handoff contract;
-- `parameters` hold tunable thresholds without hiding them in prose;
-- `steps` describe work, dependencies, artifacts, and acceptance checks;
-- `routing` expresses the explicit loop between backtest and comparison;
-- `convergence` defines when refinement stops.
+- `id` identifies a train;
+- `inputs` and `outputs` define its public bindings;
+- each step has only `inputs`, `outputs`, `procedure`, and `acceptance`;
+- `ref`, `value`, and `inplace` distinguish references, inline values, and source-changing work.
 
-This is a starting contract, not a claim that every future train needs the same fields. New schema should be added when a workflow cannot be made testable or composable without it.
+Pi execution details and run evidence live beside the workflow in runners, contracts, reports, and registry records. New train fields should be added only when executable meaning cannot be represented with this core.
 
 Remaining design questions are now downstream of this first workflow: which artifact types deserve standard formats, how different execution engines should expose replay, and which metrics generalise across train families.

@@ -2,7 +2,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { loadContract, supervisePi } from "/home/bendi/pi-product-factory/src/supervisor.mjs";
 import { buildSessionEvidencePacket } from "./build-session-evidence-packet.mjs";
 import { buildCandidateDefinition, renderCandidateYaml } from "./define-semantic-workflow-candidate.mjs";
@@ -277,10 +276,7 @@ async function run() {
   const candidateReport = JSON.parse(candidateReportBytes.toString("utf8"));
   const candidatePath = path.resolve(value(argv, "--candidate-train", path.join(path.dirname(absoluteCandidateReportPath), "candidate-train.yaml")));
   if (!fs.existsSync(candidatePath)) throw new Error(`candidate train is missing; define and verify it before backtest: ${candidatePath}`);
-  const expectedCandidate = buildCandidateDefinition(candidateReport, {
-    sourceReport: path.relative(projectDir, absoluteCandidateReportPath),
-    sourceSha256: crypto.createHash("sha256").update(candidateReportBytes).digest("hex"),
-  });
+  const expectedCandidate = buildCandidateDefinition(candidateReport);
   if (fs.readFileSync(candidatePath, "utf8") !== renderCandidateYaml(expectedCandidate)) {
     throw new Error(`candidate train does not exactly match its extraction report: ${candidatePath}`);
   }

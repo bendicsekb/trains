@@ -2,7 +2,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { buildCandidateDefinition, renderCandidateYaml } from "./define-semantic-workflow-candidate.mjs";
 
 function readJson(filePath) {
@@ -107,12 +106,10 @@ function validateAggregator({ projectDir, result }) {
   assert(Array.isArray(contract.sourceOfTruth) && contract.sourceOfTruth.every((source) => !source.endsWith(".jsonl")), "aggregator contract exposes raw session source");
   assert(fs.readFileSync(reportMarkdownPath, "utf8").includes("## Backtest plan"), "Markdown report lacks backtest section");
   const reportBytes = fs.readFileSync(reportJsonPath);
-  const expectedCandidate = buildCandidateDefinition(report, {
-    sourceReport: path.relative(projectDir, reportJsonPath),
-    sourceSha256: crypto.createHash("sha256").update(reportBytes).digest("hex"),
-  });
+  const expectedCandidate = buildCandidateDefinition(report);
   assert(fs.readFileSync(candidateTrainPath, "utf8") === renderCandidateYaml(expectedCandidate), "candidate train is not the deterministic definition of the verified extraction report");
-  assert(expectedCandidate.status === "candidate" && expectedCandidate.maturity === "observed_not_validated", "candidate train overclaims maturity");
+  assert(Object.keys(expectedCandidate).join(",") === "id,inputs,outputs,steps", "candidate train contains non-workflow metadata");
+  assert(Object.values(expectedCandidate.steps).every((step) => Object.keys(step).join(",") === "inputs,outputs,procedure,acceptance"), "candidate steps are not lean workflow definitions");
 
   const eventsPath = path.join(path.dirname(contractPath), "events.ndjson");
   const events = fs.readFileSync(eventsPath, "utf8").split("\n").filter(Boolean).map(JSON.parse);

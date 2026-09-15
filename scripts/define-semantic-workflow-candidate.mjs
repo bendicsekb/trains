@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -42,6 +41,18 @@ function yamlKey(key) {
   return /^[A-Za-z_][A-Za-z0-9_-]*$/.test(key) ? key : JSON.stringify(key);
 }
 
+function compactBinding(value) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const entries = Object.entries(value);
+  if (entries.length !== 1 || !["ref", "value", "inplace"].includes(entries[0][0])) return null;
+  const [key, item] = entries[0];
+  if (item !== null && typeof item === "object") {
+    if (!Array.isArray(item) && Object.keys(item).length === 0) return `{${key}: {}}`;
+    return null;
+  }
+  return `{${key}: ${scalar(item)}}`;
+}
+
 function yamlLines(value, indent = 0) {
   const prefix = " ".repeat(indent);
   if (Array.isArray(value)) {
@@ -59,6 +70,8 @@ function yamlLines(value, indent = 0) {
     if (entries.length === 0) return [`${prefix}{}`];
     return entries.flatMap(([key, item]) => {
       if (item !== null && typeof item === "object") {
+        const compact = compactBinding(item);
+        if (compact) return [`${prefix}${yamlKey(key)}: ${compact}`];
         const empty = Array.isArray(item) ? item.length === 0 : Object.keys(item).length === 0;
         if (empty) return [`${prefix}${yamlKey(key)}: ${Array.isArray(item) ? "[]" : "{}"}`];
         return [`${prefix}${yamlKey(key)}:`, ...yamlLines(item, indent + 2)];
@@ -73,7 +86,7 @@ export function renderCandidateYaml(candidate) {
   return `${yamlLines(candidate).join("\n")}\n`;
 }
 
-export function buildCandidateDefinition(report, { sourceReport, sourceSha256 }) {
+export function buildCandidateDefinition(report) {
   const extracted = report.extractedWorkflow;
   if (!report.topic?.name || !Array.isArray(extracted?.steps) || extracted.steps.length === 0) {
     throw new Error("semantic extraction report does not contain a workflow candidate");
@@ -82,90 +95,58 @@ export function buildCandidateDefinition(report, { sourceReport, sourceSha256 })
     throw new Error(`unsupported extracted workflow status: ${extracted.status}`);
   }
 
-  const ids = extracted.steps.map(stepId);
-  const steps = extracted.steps.map((step, index) => {
+  const ids = extracted.steps.map(stepId).map((id) => id.replace(/^\d+-/, ""));
+  const outputNames = ["frame", "next_action", "scoped_result", "verification", "classification", "intervention", "durable_state", "decision"];
+  const acceptance = [
+    "Intent, constraints, uncertainty, work mode, and evidence boundary are explicit.",
+    "The next action is bounded and its stop conditions are explicit.",
+    "Execution stays within scope and preserves required provenance and rollback.",
+    "Relevant positive, negative, runtime, and external boundaries are checked without broadening the claim.",
+    "Blocked, partial, interrupted, and failed results retain their actual classification.",
+    "The response is the smallest change, route, check, or stop supported by evidence.",
+    "Artifacts, decisions, unknowns, and acceptance state are durable and remain distinguishable.",
+    "The decision is repeat, stop, or accept_scoped_claim, and any accepted claim stays within the evidence boundary.",
+  ];
+  const steps = Object.fromEntries(extracted.steps.map((step, index) => {
     const supportCount = step.supportCount ?? step.iterationOrBoundedFollowUpSupportCount;
-    if (!Number.isInteger(supportCount) || supportCount < 1) {
-      throw new Error(`invalid support count for extracted step ${step.step}`);
-    }
-    return {
-      id: ids[index],
-      name: step.name,
-      needs: index === 0 ? [] : [ids[index - 1]],
-      procedure: [step.observedBehavior],
-      evidence: {
-        supportCount,
-        supportDossiers: step.supportDossiers ?? step.iterationOrBoundedFollowUpDossiers ?? [],
-      },
-      acceptance: [
-        index === extracted.steps.length - 1
-          ? "The terminal decision and its claim boundary are explicit."
-          : "The output and remaining unknowns are explicit before the next step begins.",
-      ],
-    };
-  });
+    if (!Number.isInteger(supportCount) || supportCount < 1) throw new Error(`invalid support count for extracted step ${step.step}`);
+    const previousOutput = index === 0 ? null : outputNames[index - 1];
+    const inputs = index === 0
+      ? {
+          intent: { ref: "input.intent" },
+          constraints: { ref: "input.constraints" },
+          current_state: { ref: "input.current_state" },
+          evidence_boundary: { ref: "input.evidence_boundary" },
+        }
+      : { [previousOutput]: { ref: `steps.${ids[index - 1]}.outputs.${previousOutput}` } };
+    if (index === 7) inputs.evidence_boundary = { ref: "input.evidence_boundary" };
+    const outputs = { [outputNames[index]]: { ref: outputNames[index] } };
+    if (index === 2 || index === 5 || index === 6) outputs.work = { inplace: true };
+    const procedure = `${step.name.replace(/\.$/, "")}.`;
+    return [ids[index], {
+      inputs,
+      outputs,
+      procedure: [procedure],
+      acceptance: [acceptance[index]],
+    }];
+  }));
 
   return {
-    version: "0.1.0",
-    kind: "train",
     id: slugify(report.topic.name),
-    name: report.topic.name,
-    status: "candidate",
-    maturity: "observed_not_validated",
-    purpose: report.topic.statement,
-    scope: report.topic.scope,
-    provenance: {
-      sourceReport,
-      sourceSha256,
-      parentRunId: report.parentRunId,
-      sourceDossierCount: report.topic.sourceDossierCount,
-      selectedHumanMessages: report.stats?.selectedSessionMetadataTotals?.humanMessages,
-      extractionStatus: extracted.status,
-    },
     inputs: {
-      intent: { type: "string", required: true },
-      constraints: { type: "object", required: false, default: {} },
-      currentState: { type: "artifact-set", required: true },
-      evidenceBoundary: { type: "object", required: true },
+      intent: { ref: "input.intent" },
+      constraints: { value: {} },
+      current_state: { ref: "input.current_state" },
+      evidence_boundary: { ref: "input.evidence_boundary" },
     },
     outputs: {
-      scopedResult: { type: "artifact" },
-      verificationRecord: { type: "artifact" },
-      durableStateUpdate: { type: "artifact" },
-      decision: { type: "enum", values: ["repeat", "stop", "accept_scoped_claim"] },
+      scoped_result: { ref: "steps.execute.outputs.scoped_result" },
+      verification: { ref: "steps.observe.outputs.verification" },
+      durable_state: { ref: "steps.update.outputs.durable_state" },
+      decision: { ref: "steps.repeat.outputs.decision" },
+      work: { inplace: true },
     },
     steps,
-    routing: {
-      sequential: ids,
-      terminal: {
-        repeat: ids[1] ?? ids[0],
-        stop: "complete",
-        accept_scoped_claim: "complete",
-      },
-    },
-    claimBoundary: {
-      mayClaim: [
-        "The workflow is a versioned candidate observed in the declared development dossiers.",
-        "Individual steps have the support counts recorded in this definition.",
-      ],
-      mayNotClaim: [
-        "The workflow is converged, causally superior, or proven to improve task success.",
-        "Historical process traces establish user value or product success.",
-      ],
-    },
-    validation: {
-      extraction: "verified_before_registry_promotion",
-      backtestMode: "observational_trace_not_replay",
-      backtestStatus: "insufficient_evidence",
-      convergence: "not_converged",
-      holdout: "sealed",
-    },
-    newObservedPatterns: (report.newFromSessions ?? []).map((pattern) => ({
-      pattern: pattern.pattern,
-      supportCount: pattern.supportCount,
-      supportDossiers: pattern.supportDossiers,
-    })),
-    openQuestions: report.unknowns ?? [],
   };
 }
 
@@ -173,10 +154,7 @@ export function defineCandidateFromReport({ projectDir, reportPath, outputPath }
   const absoluteReport = path.resolve(reportPath);
   const bytes = fs.readFileSync(absoluteReport);
   const report = JSON.parse(bytes.toString("utf8"));
-  const candidate = buildCandidateDefinition(report, {
-    sourceReport: path.relative(projectDir, absoluteReport),
-    sourceSha256: crypto.createHash("sha256").update(bytes).digest("hex"),
-  });
+  const candidate = buildCandidateDefinition(report);
   const rendered = renderCandidateYaml(candidate);
   ensureDir(path.dirname(outputPath));
   fs.writeFileSync(outputPath, rendered, "utf8");

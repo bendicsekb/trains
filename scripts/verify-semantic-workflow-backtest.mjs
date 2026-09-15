@@ -2,7 +2,6 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { buildCandidateDefinition, renderCandidateYaml } from "./define-semantic-workflow-candidate.mjs";
 
 const METRICS = [
@@ -124,10 +123,7 @@ function main() {
   const candidatePath = resolve(projectDir, result.candidateDefinition);
   const candidateReportPath = resolve(projectDir, result.candidateReport);
   const reportBytes = fs.readFileSync(candidateReportPath);
-  const expectedCandidate = buildCandidateDefinition(JSON.parse(reportBytes.toString("utf8")), {
-    sourceReport: path.relative(projectDir, candidateReportPath),
-    sourceSha256: crypto.createHash("sha256").update(reportBytes).digest("hex"),
-  });
+  const expectedCandidate = buildCandidateDefinition(JSON.parse(reportBytes.toString("utf8")));
   assert(fs.readFileSync(candidatePath, "utf8") === renderCandidateYaml(expectedCandidate), "backtest did not use the exact defined candidate train");
   const cases = result.caseResults.map((caseResult) => validateCase(projectDir, result, caseResult));
   const aggregator = validateAggregator(projectDir, result);
