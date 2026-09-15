@@ -29,10 +29,14 @@ function relative(projectDir, filePath) {
 
 function boundaryCheck(boundary, pattern, safeTextPattern) {
   const entries = Object.entries(boundary ?? {}).filter(([name]) => pattern.test(name));
-  const allText = Object.entries(boundary ?? {}).map(([name, value]) => `${name}: ${String(value)}`).join("\n");
+  const allText = Array.isArray(boundary)
+    ? boundary.map((value) => String(value)).join("\n")
+    : Object.entries(boundary ?? {}).map(([name, value]) => `${name}: ${String(value)}`).join("\n");
+  const lines = allText.split(/[\n.;]+/).filter(Boolean);
+  const positive = /\b(?:opened|read|copied|included|accessed|exposed)\b/i;
   return {
     hasSafe: entries.some(([, value]) => value === false) || safeTextPattern.test(allText),
-    hasTrue: entries.some(([, value]) => value === true),
+    hasTrue: entries.some(([, value]) => value === true) || lines.some((line) => pattern.test(line) && positive.test(line) && !safeTextPattern.test(line)),
   };
 }
 
@@ -66,10 +70,10 @@ function validateDossierHandoff(handoffPath, { expectedRunId, expectedSessionId,
   if (path.resolve(handoff.evidencePacketPath) !== path.resolve(evidencePacketPath)) throw new Error(`evidence packet path mismatch at ${handoffPath}`);
   if (!Array.isArray(handoff.evidenceReferences) || handoff.evidenceReferences.length === 0) throw new Error(`dossier handoff has no evidence references: ${handoffPath}`);
   const boundary = handoff.boundaryChecks;
-  const rawSession = boundaryCheck(boundary, /raw.*session|session.*raw/i, /only the declared evidence packet|raw\s+session[^\n.;]*\b(?:not|no|never)\b/i);
-  const otherSession = boundaryCheck(boundary, /other.*historical.*session|historical.*session.*other|other.*session/i, /only the declared evidence packet|other\s+historical\s+sessions?[^\n.;]*\b(?:not|no|never)\b/i);
-  const siblingData = boundaryCheck(boundary, /sibling|other.*worker|worker.*artifact|other.*artifact/i, /only the declared evidence packet|sibling[^\n.;]*\b(?:not|no|never)\b/i);
-  const transcript = boundaryCheck(boundary, /transcript/i, /(?:no|not|never)\b[^\n.;]*raw transcript|raw transcript[^\n.;]*\b(?:not|no|never)\b/i);
+  const rawSession = boundaryCheck(boundary, /raw.*session|session.*raw/i, /only the declared evidence packet|raw(?:\s+\w+){0,3}\s+session[^\n.;]*\b(?:not|no|never)\b/i);
+  const otherSession = boundaryCheck(boundary, /other.*historical.*session|historical.*session.*other|other.*session/i, /only the declared evidence packet|other\s+(?:historical\s+)?sessions?[^\n.;]*\b(?:not|no|never)\b/i);
+  const siblingData = boundaryCheck(boundary, /sibling|other.*worker|worker.*artifact|other.*artifact/i, /only the declared evidence packet|(?:sibling|other workers?|worker artifacts?|sibling dossiers?)[^\n.;]*\b(?:not|no|never)\b/i);
+  const transcript = boundaryCheck(boundary, /transcript/i, /(?:no|not|never)\b[^\n.;]*(?:full|raw) transcript|(?:full|raw) transcript[^\n.;]*\b(?:not|no|never)\b/i);
   const secrets = boundaryCheck(boundary, /secret/i, /(?:no|not|never)\b[^\n.;]*secret|secret[^\n.;]*\b(?:not|no|never)\b/i);
   const missingBoundaryAssertion = !rawSession.hasSafe || !otherSession.hasSafe || !siblingData.hasSafe || !transcript.hasSafe || !secrets.hasSafe;
   if (rawSession.hasTrue || otherSession.hasTrue || siblingData.hasTrue || transcript.hasTrue || secrets.hasTrue || missingBoundaryAssertion) {
