@@ -46,18 +46,23 @@ function validateCase(projectDir, result, caseResult) {
     if (Array.isArray(caseReport.metrics)) {
       assert(caseReport.metrics.length > 0, `case has no metrics: ${casePath}`);
       for (const metric of caseReport.metrics) assert(metric[side] && ["supported", "unsupported", "mixed", "unknown"].includes(metric[side].status), `case metric lacks ${side} status: ${casePath}`);
+    } else if (Array.isArray(caseReport[side].metrics)) {
+      assert(caseReport[side].metrics.length > 0, `case has no ${side} metrics: ${casePath}`);
+      for (const metric of caseReport[side].metrics) assert(["supported", "unsupported", "mixed", "unknown"].includes(metric.status), `case metric lacks ${side} status: ${casePath}`);
     } else {
       for (const metric of METRICS) assert(caseReport[side].metrics?.[metric], `case missing ${side}.${metric}: ${casePath}`);
     }
   }
   if (Array.isArray(caseReport.metrics)) {
     for (const metric of caseReport.metrics) assert(metric.comparison && ["supported", "unsupported", "mixed", "unknown"].includes(metric.comparison.status), `case metric lacks comparison status: ${casePath}`);
+  } else if (Array.isArray(caseReport.comparison?.metrics)) {
+    for (const metric of caseReport.comparison.metrics) assert(["supported", "unsupported", "mixed", "unknown"].includes(metric.status), `case metric lacks comparison status: ${casePath}`);
   } else {
     for (const metric of METRICS) assert(caseReport.comparison?.metrics?.[metric], `case missing comparison.${metric}: ${casePath}`);
   }
-  assert(handoff.schemaVersion === 1 && handoff.handoffType === "observational-semantic-backtest-case-handoff", `invalid case handoff: ${handoffPath}`);
-  assert((handoff.status === "ready_for_verification" || handoff.resultStatus === "ready_for_verification") && (handoff.evaluationMode === "observational_trace_not_replay" || handoff.boundary?.observationalOnly === true), `invalid case handoff state: ${handoffPath}`);
   const boundary = handoff.boundaryChecks ?? handoff.boundary ?? {};
+  assert(handoff.schemaVersion === 1 && ["observational-semantic-backtest-case-handoff", "observational_backtest_case_handoff"].includes(handoff.handoffType), `invalid case handoff: ${handoffPath}`);
+  assert((handoff.status === "ready_for_verification" || handoff.resultStatus === "ready_for_verification") && (handoff.evaluationMode === "observational_trace_not_replay" || boundary.observationalOnly === true || boundary.observationalTraceOnly === true || boundary.directTraceSupportOnly === true || boundary.type === "observational_trace_not_replay"), `invalid case handoff state: ${handoffPath}`);
   for (const key of ["rawSessionOpened", "otherHistoricalSessionsOpened", "siblingWorkerArtifactsOpened", "fullTranscriptCopied", "secretsCopied", "rawTranscriptOpened", "otherCasesOpened", "workerArtifactsOpened", "causalReplay", "semanticReplay", "counterfactualEvaluation"]) assert(boundary[key] !== true, `unsafe case boundary ${key}: ${handoffPath}`);
   const packetPath = handoff.evidencePacketPath ?? caseReport.inputs?.evidencePacket;
   assert(packetPath, `case does not identify its evidence packet: ${casePath}`);

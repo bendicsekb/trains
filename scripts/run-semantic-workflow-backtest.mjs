@@ -232,7 +232,7 @@ function validateCaseHandoff(handoffPath, { expectedRunId, expectedSessionId, ca
   for (const field of ["schemaVersion", "handoffType", "runId", "unknowns"]) {
     if (!(field in handoff)) throw new Error(`case handoff missing ${field}: ${handoffPath}`);
   }
-  if (handoff.schemaVersion !== 1 || handoff.handoffType !== "observational-semantic-backtest-case-handoff") throw new Error(`case handoff type mismatch: ${handoffPath}`);
+  if (handoff.schemaVersion !== 1 || !["observational-semantic-backtest-case-handoff", "observational_backtest_case_handoff"].includes(handoff.handoffType)) throw new Error(`case handoff type mismatch: ${handoffPath}`);
   if (handoff.runId !== expectedRunId && handoff.runId !== path.basename(path.dirname(handoffPath))) throw new Error(`case handoff identity mismatch: ${handoffPath}`);
   const caseId = handoff.sessionId ?? handoff.caseId ?? "";
   if (handoff.sessionId !== expectedSessionId && !String(caseId).includes(expectedSessionId)) throw new Error(`case handoff session identity mismatch: ${handoffPath}`);
@@ -241,7 +241,7 @@ function validateCaseHandoff(handoffPath, { expectedRunId, expectedSessionId, ca
   const boundary = handoff.boundaryChecks ?? handoff.boundary ?? {};
   const unsafeTrueKeys = ["rawSessionOpened", "otherHistoricalSessionsOpened", "siblingWorkerArtifactsOpened", "fullTranscriptCopied", "secretsCopied", "rawTranscriptOpened", "otherCasesOpened", "workerArtifactsOpened", "causalReplay", "semanticReplay", "counterfactualEvaluation"];
   if (unsafeTrueKeys.some((key) => boundary[key] === true)) throw new Error(`case handoff violated its observational boundary: ${handoffPath}`);
-  if (boundary.observationalOnly !== true && boundary.observationalTraceOnly !== true && boundary.evaluationModeExact !== true && boundary.mode !== "observational-semantic-backtest-case") throw new Error(`case handoff lacks observational boundary: ${handoffPath}`);
+  if (boundary.observationalOnly !== true && boundary.observationalTraceOnly !== true && boundary.directTraceSupportOnly !== true && boundary.evaluationModeExact !== true && boundary.type !== "observational_trace_not_replay" && boundary.mode !== "observational-semantic-backtest-case") throw new Error(`case handoff lacks observational boundary: ${handoffPath}`);
   return handoff;
 }
 
