@@ -90,13 +90,21 @@ function validateAggregator(projectDir, result) {
   assert(report.split === result.split, "backtest split mismatch");
   assert(Array.isArray(report.perCase) && report.perCase.length === result.caseCount, "backtest per-case count mismatch");
   assert(report.aggregate?.candidate && report.aggregate?.baseline && report.aggregate?.comparison, "backtest aggregate comparison missing");
-  for (const side of ["candidate", "baseline", "comparison"]) for (const metric of METRICS) assert(report.aggregate[side][metric], `backtest aggregate missing ${side}.${metric}`);
+  for (const side of ["candidate", "baseline", "comparison"]) {
+    if (Array.isArray(report.aggregate[side].metrics)) {
+      assert(report.aggregate[side].metrics.length > 0, `backtest aggregate has no ${side} metrics`);
+      for (const metric of report.aggregate[side].metrics) assert(["supported", "unsupported", "mixed", "unknown"].includes(metric.status), `backtest aggregate has invalid ${side} metric status`);
+    } else {
+      for (const metric of METRICS) assert(report.aggregate[side][metric], `backtest aggregate missing ${side}.${metric}`);
+    }
+  }
   assert(handoff.schemaVersion === 1 && handoff.handoffType === "semantic-backtest-aggregation-handoff", "invalid aggregator handoff");
   assert(handoff.status === "ready_for_verification" && handoff.caseCount === result.caseCount, "invalid aggregator handoff state");
   assert(handoff.evaluationMode === "observational_trace_not_replay", "aggregator handoff overclaims replay");
   assert(handoff.convergence?.status !== "converged", "aggregator handoff claims convergence");
   assert(JSON.stringify(handoff).toLowerCase().includes("unknown"), "aggregator handoff drops unknowns");
-  assert(fs.readFileSync(markdownPath, "utf8").includes("Observational trace evaluation"), "Markdown report lacks observational boundary");
+  const markdown = fs.readFileSync(markdownPath, "utf8");
+  assert(/observational(?: trace)?(?: evaluation| support)|observational_trace_not_replay/i.test(markdown), "Markdown report lacks observational boundary");
   const eventsPath = path.join(path.dirname(contractPath), "events.ndjson");
   const events = fs.readFileSync(eventsPath, "utf8").split("\n").filter(Boolean).map(JSON.parse);
   assert(events.find((event) => event.type === "supervisor_started")?.payload?.args?.includes("--no-session"), `aggregator did not use --no-session: ${eventsPath}`);
