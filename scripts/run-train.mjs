@@ -29,13 +29,14 @@ if (!trainPath) {
     const inputPath = value(argv, "--input-json");
     const inputs = inputPath ? JSON.parse(fs.readFileSync(path.resolve(inputPath), "utf8")) : {};
     const workerArgs = argv.flatMap((arg, index) => arg === "--worker-arg" && argv[index + 1] ? [argv[index + 1]] : []);
+    const piCli = value(argv, "--pi-cli");
     const result = await runTrain({
       trainPath,
       inputs,
       runDir: value(argv, "--run-dir"),
-      workerCommand: value(argv, "--worker-command", "pi"),
+      workerCommand: value(argv, "--worker-command", piCli ? process.execPath : "pi"),
       workerArgs: workerArgs.length > 0 ? workerArgs : undefined,
-      piCli: value(argv, "--pi-cli"),
+      piCli,
       provider: value(argv, "--provider"),
       model: value(argv, "--model"),
       thinking: value(argv, "--thinking"),
