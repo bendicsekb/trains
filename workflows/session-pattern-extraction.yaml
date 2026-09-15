@@ -30,6 +30,9 @@ outputs:
   corpus_index:
     type: artifact
     description: Streaming structural inventory of all source sessions; raw transcript text is not copied.
+  interesting_session_index:
+    type: artifact
+    description: Frozen-snapshot discovery metadata ranking human-message volume, explicit product-factory skill references, and observable building signals without retaining message text.
   session_inventory:
     type: artifact
     description: Selected sessions, metadata, independence groups, and fixed splits.
@@ -114,9 +117,13 @@ execution:
 steps:
   - id: identify-sessions
     name: Identify relevant sessions
-    inputs: [session_corpus, target_behavior, constraints]
+    inputs: [session_corpus, interesting_session_index, target_behavior, constraints]
     procedure:
       - Run a deterministic streaming index over the declared session roots before asking an agent to interpret content; record paths, hashes, sizes, timestamps, parse errors, event types, roles, tools, and thread metadata without copying transcript text.
+      - Fix development, tuning, and holdout assignment before applying the interest ranking; rank only eligible development/tuning sessions by canonical human-message count, while separately retaining every explicit product-factory or product-factory-pi reference and the bounded likely-building candidates.
+      - Exclude synthetic Codex context and embedded review transcripts from the human-message count; record that exclusion rather than treating injected context as human persistence.
+      - Check whether the highest-ranked and skill-matched sessions show building evidence using observable edit, command, test, and version-control signals; treat the result as a selection signal, not as a semantic success label.
+      - Preserve the default review set: top 25 by human-message count, every skill-matched session, and top 25 likely-building sessions.
       - Enumerate candidate sessions using explicit relevance signals, not only filenames or recency, from the corpus index.
       - Assign a stable session id and record source, date, task intent, outcome, tools, human interventions, and privacy status.
       - Group retries, continuations, and near-duplicates so they cannot inflate independent support.

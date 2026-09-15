@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { loadContract, supervisePi } from "/home/bendi/pi-product-factory/src/supervisor.mjs";
+import { buildInterestIndex } from "./build-session-interest-index.mjs";
 import { runExecutiveSummary } from "./run-session-pattern-extraction-summary.mjs";
 
 function value(argv, flag, fallback) {
@@ -40,6 +41,17 @@ if (!contractPath) {
   const stepsDir = path.join(chainDir, "steps");
   const chainEventsPath = path.join(chainDir, "chain-events.ndjson");
   const chainResultPath = path.join(chainDir, "chain-result.json");
+  const sourceIndexPath = path.resolve(value(
+    argv,
+    "--source-index",
+    path.join(projectDir, "artifacts/session-pattern-extraction/full-20260914/corpus-index.json"),
+  ));
+  const interestIndexPath = path.resolve(value(
+    argv,
+    "--interest-index",
+    path.join(artifactDir, "00-session-interest-index.json"),
+  ));
+  const interestTop = Number(value(argv, "--interest-top", "25"));
   const node = value(argv, "--node", "/home/bendi/.nvm/versions/node/v22.22.0/bin/node");
   const piCli = value(argv, "--pi-cli", "/home/bendi/.npm/_npx/a54d9a87e5358117/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js");
   const agentDir = value(argv, "--agent-dir", "/home/bendi/.pi/agent");
@@ -54,7 +66,7 @@ if (!contractPath) {
       id: "identify-sessions",
       number: 1,
       title: "Identify sessions",
-      action: "Build the complete session inventory and fixed development/tuning/holdout split from the frozen structural index.",
+      action: "Build the complete inventory and fixed development/tuning/holdout split from the frozen structural index before applying any interest ranking. Then use the deterministic interest index to prioritize eligible sessions with the highest human-message counts, explicit product-factory or product-factory-pi references, and likely-building signals; never use holdout ranking to select extraction evidence.",
       inputs: [],
       outputs: ["01-session-inventory.json"],
       next: "extract-workflow",
@@ -124,12 +136,19 @@ if (!contractPath) {
   const relative = (filePath) => path.relative(projectDir, filePath) || ".";
 
   const initialHandoffPath = path.join(chainDir, "00-initial-handoff.json");
+  const existingInventoryPath = path.join(artifactDir, "01-session-inventory.json");
+  await buildInterestIndex({
+    indexPath: sourceIndexPath,
+    inventoryPath: fs.existsSync(existingInventoryPath) ? existingInventoryPath : null,
+    outputPath: interestIndexPath,
+    top: interestTop,
+  });
   writeJson(initialHandoffPath, {
     schemaVersion: 1,
     runId: master.runId,
     step: "initial-input",
     status: "ready",
-    sourceOfTruth: [relative(masterContractPath), relative(path.join(projectDir, "workflows/session-pattern-extraction.yaml")), relative(path.join(projectDir, "artifacts/session-pattern-extraction/full-20260914/corpus-index.json"))],
+    sourceOfTruth: [relative(masterContractPath), relative(path.join(projectDir, "workflows/session-pattern-extraction.yaml")), relative(sourceIndexPath), relative(interestIndexPath)],
     targetBehavior: "structural cross-session agent workflow behavior",
     reasoning: [],
     nextStep: "identify-sessions",
@@ -142,10 +161,11 @@ if (!contractPath) {
       masterContractPath,
       path.join(projectDir, "workflows/session-pattern-extraction.yaml"),
       path.join(projectDir, "docs/session-pattern-extraction.md"),
-      path.join(projectDir, "artifacts/session-pattern-extraction/full-20260914/corpus-index.json"),
+      sourceIndexPath,
       inputHandoffPath,
       ...priorArtifacts,
     ].filter(Boolean);
+    if (stage.id === "identify-sessions") sourceOfTruth.push(interestIndexPath);
     const mayClaim = stage.id === "loop-until-converged"
       ? ["the explicit structural convergence decision recorded in the handoff and convergence artifact"]
       : [`the ${stage.title.toLowerCase()} artifact and handoff were written and satisfy their explicit structural checks`];
@@ -159,6 +179,9 @@ if (!contractPath) {
         "This is a fresh Pi context. Read only the declared input handoff and the declared source-of-truth files for this stage.",
         "Do not read prior Pi events, another step's contract, another step's handoff, or any raw historical session file.",
         stage.action,
+        stage.id === "identify-sessions"
+          ? "Assign or confirm the fixed split before interpreting the interest index; holdout sessions may be inventoried but must not enter the extraction review set."
+          : "",
         `Write only the declared artifacts and then write the required JSON handoff to ${handoffPath}.`,
         "The handoff must contain schemaVersion, runId, step, status, inputsRead, outputsWritten, evidenceRefs, decisions, openQuestions, nextStep, and claimsNotMade.",
         stage.id === "loop-until-converged"
@@ -261,9 +284,11 @@ if (!contractPath) {
     contextBoundary: "one fresh Pi --no-session process per train step; only declared JSON handoffs cross steps",
     stages: stages.map(({ id, number, title }) => ({ id, number, title })),
     maxIterations,
-    sourceIndex: relative(path.join(projectDir, "artifacts/session-pattern-extraction/full-20260914/corpus-index.json")),
+    sourceIndex: relative(sourceIndexPath),
+    interestIndex: relative(interestIndexPath),
+    interestTop,
   });
-  appendEvent("chain_started", { contextBoundary: "fresh_context_per_step", maxIterations });
+  appendEvent("chain_started", { contextBoundary: "fresh_context_per_step", maxIterations, sourceIndex: relative(sourceIndexPath), interestIndex: relative(interestIndexPath), interestTop });
 
   const runStage = async (stage, stageIteration, inputHandoffPath, priorArtifacts, outputArtifacts) => {
     const stageDir = path.join(stepsDir, `${String(stage.number).padStart(2, "0")}-${stage.id}${stageIteration ? `-i${stageIteration}` : ""}`);
@@ -311,7 +336,7 @@ if (!contractPath) {
 
   for (const stage of stages.slice(0, 3)) {
     const outputArtifacts = stage.outputs.map((name) => path.join(artifactDir, name));
-    const result = await runStage(stage, 0, previousHandoffPath, [], outputArtifacts);
+    const result = await runStage(stage, 0, previousHandoffPath, stage.id === "identify-sessions" ? [interestIndexPath] : [], outputArtifacts);
     record(result);
     if (result.supervisorResult.status === "escalated") {
       failed = true;

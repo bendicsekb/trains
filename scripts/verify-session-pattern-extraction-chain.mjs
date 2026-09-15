@@ -38,6 +38,21 @@ if (!fs.existsSync(manifestPath)) {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   check("chain-manifest", manifest.runId === contract.runId && manifest.stages?.length === 6, "six stages and matching run id");
   check("context-boundary", manifest.contextBoundary === "one fresh Pi --no-session process per train step; only declared JSON handoffs cross steps", "manifest records fresh-process/handoff-only boundary");
+  if (manifest.interestIndex) {
+    const interestPath = path.resolve(contract.projectDir, manifest.interestIndex);
+    check("interest-index", fs.existsSync(interestPath), "discovery interest index exists");
+    if (fs.existsSync(interestPath)) {
+      try {
+        const interest = JSON.parse(fs.readFileSync(interestPath, "utf8"));
+        check("interest-index-shape", interest.schemaVersion === 1
+          && interest.privacy?.contentTextIncluded === false
+          && interest.summary?.sessionCount > 0
+          && interest.mostHumanMessages, "interest index is bounded and populated");
+      } catch (error) {
+        check("interest-index-shape", false, error.message);
+      }
+    }
+  }
 }
 
 const initialHandoffPath = path.join(chainDir, "00-initial-handoff.json");
