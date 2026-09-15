@@ -209,8 +209,9 @@ function buildAggregatorContract({ master, runDir, artifactDir, interestPath, do
       "Extract the common workflow that is actually evidenced across the dossiers. Treat frequency as support, not proof of quality.",
       `Compare the session-derived workflow with this prior idea, without importing any other skill text: ${priorIdea}`,
       "Report the topic, session/building statistics, extracted workflow, new patterns versus matches to the prior idea, contradictions, interventions, evidence gaps, and what would need backtesting.",
-      `Write JSON to ${reportJsonPath}, Markdown to ${reportMarkdownPath}, and the required handoff to ${handoffPath}.`,
-      `The aggregator handoff must be JSON with schemaVersion 1, handoffType semantic-workflow-aggregation-handoff, runId, status ready_for_verification, dossierCount ${dossierPaths.length}, sourceDossiers containing all ${dossierPaths.length} declared dossier paths, summary, unknowns, and intervention.`,
+      `Write JSON to ${reportJsonPath}, Markdown to ${reportMarkdownPath}, and the required handoff to ${handoffPath}. Do not write the handoff until both report files exist and contain the required sections.`,
+      `The exact aggregator handoff runId is ${runId}; copy it exactly and do not use the parent runId ${master.runId}.`,
+      `The aggregator handoff must be JSON with schemaVersion 1, handoffType semantic-workflow-aggregation-handoff, the exact runId above, status ready_for_verification, dossierCount ${dossierPaths.length}, sourceDossiers containing all ${dossierPaths.length} declared dossier paths, summary, unknowns, and intervention.`,
     ].join(" "),
     projectDir: master.projectDir,
     claimBoundary: {
@@ -259,6 +260,7 @@ function buildAggregatorContract({ master, runDir, artifactDir, interestPath, do
       selectedSessionIds: selectedSessions.map((session) => session.id),
       priorIdea,
       outputs: [reportJsonPath, reportMarkdownPath, handoffPath],
+      expectedHandoffRunId: runId,
     },
   };
 }
@@ -287,8 +289,21 @@ async function run() {
   const thinking = value(argv, "--thinking", "xhigh");
   const stallMs = Number(value(argv, "--stall-ms", "300000"));
   const runtimeMs = Number(value(argv, "--runtime-ms", "1200000"));
+  const reuseDossierAttemptArg = value(argv, "--reuse-dossier-attempt", undefined);
   const interest = readJson(interestPath);
-  const selectedSessions = selectSessions(interest, maxSessions);
+  let selectedSessions;
+  let reuseDossierAttempt = null;
+  if (reuseDossierAttemptArg !== undefined) {
+    reuseDossierAttempt = path.resolve(reuseDossierAttemptArg);
+    const reuseAttemptLabel = path.basename(reuseDossierAttempt);
+    const reuseManifestPath = path.join(runDir, reuseAttemptLabel, "selection-manifest.json");
+    if (!fs.existsSync(reuseManifestPath)) throw new Error(`cannot reuse dossier attempt without selection manifest: ${reuseManifestPath}`);
+    const reuseManifest = readJson(reuseManifestPath);
+    selectedSessions = reuseManifest.selectedSessions;
+    if (!Array.isArray(selectedSessions) || selectedSessions.length === 0) throw new Error(`reused dossier attempt has no selected sessions: ${reuseManifestPath}`);
+  } else {
+    selectedSessions = selectSessions(interest, maxSessions);
+  }
   if (selectedSessions.length === 0) throw new Error("no eligible development skill-matched building sessions found");
 
   const manifestPath = path.join(attemptDir, "selection-manifest.json");
@@ -304,57 +319,82 @@ async function run() {
 
   const piArgs = [piCli, "--mode", "rpc", "--no-session", "--provider", provider, "--model", model, "--thinking", thinking, "--extension", "/home/bendi/pi-product-factory/extensions/factory.js"];
   const dossierResults = [];
-  for (let index = 0; index < selectedSessions.length; index += 1) {
-    const session = selectedSessions[index];
-    const workerDir = path.join(dossierDir, `${String(index + 1).padStart(2, "0")}-${session.id}`);
-    const evidencePacketPath = path.join(workerDir, "evidence-packet.json");
-    const dossierPath = path.join(workerDir, "dossier.json");
-    const handoffPath = path.join(workerDir, "handoff.json");
-    const evidencePacket = buildSessionEvidencePacket({ sourceReference: session.sourceReference, sessionId: session.id, interestMetadata: session });
-    writeJson(evidencePacketPath, evidencePacket);
-    const contract = workerContract({ master, session, index, total: selectedSessions.length, interestPath, evidencePacketPath, dossierPath, handoffPath });
-    const workerContractPath = path.join(workerDir, "contract.json");
-    writeJson(workerContractPath, contract);
-    console.error(`dossier ${index + 1}/${selectedSessions.length}: ${session.id} (${evidencePacket.statistics.packetCharacters} packet chars)`);
-    const supervisorResult = await supervisePi({ contract, contractPath: workerContractPath, command: node, args: piArgs, cwd: projectDir, env: { PI_CODING_AGENT_DIR: agentDir }, stallMs, maxRuntimeMs: runtimeMs });
-    let handoff = null;
-    let status = supervisorResult.status;
-    let reason = supervisorResult.reason ?? null;
-    if (status !== "escalated") {
-      try {
-        handoff = validateDossierHandoff(handoffPath, {
-          expectedRunId: contract.runId,
-          expectedSessionId: session.id,
-          dossierPath,
-          evidencePacketPath,
-        });
-        if (!fs.existsSync(dossierPath)) throw new Error(`missing dossier: ${dossierPath}`);
-      } catch (error) {
-        status = "escalated";
-        reason = "invalid_dossier_handoff";
-        supervisorResult.error = error.message;
-      }
+  if (reuseDossierAttempt) {
+    for (let index = 0; index < selectedSessions.length; index += 1) {
+      const session = selectedSessions[index];
+      const workerDir = path.join(reuseDossierAttempt, "dossiers", `${String(index + 1).padStart(2, "0")}-${session.id}`);
+      const evidencePacketPath = path.join(workerDir, "evidence-packet.json");
+      const dossierPath = path.join(workerDir, "dossier.json");
+      const handoffPath = path.join(workerDir, "handoff.json");
+      const workerContractPath = path.join(workerDir, "contract.json");
+      if (!fs.existsSync(workerContractPath)) throw new Error(`cannot reuse dossier without worker contract: ${workerContractPath}`);
+      const contract = readJson(workerContractPath);
+      validateDossierHandoff(handoffPath, { expectedRunId: contract.runId, expectedSessionId: session.id, dossierPath, evidencePacketPath });
+      if (!fs.existsSync(dossierPath)) throw new Error(`missing reused dossier: ${dossierPath}`);
+      dossierResults.push({
+        sessionId: session.id,
+        sourceReference: session.sourceReference,
+        dossier: relative(projectDir, dossierPath),
+        handoff: relative(projectDir, handoffPath),
+        supervisorStatus: "needs_verification",
+        reason: null,
+        handoffStatus: "ready_for_verification",
+        reusedFrom: relative(projectDir, reuseDossierAttempt),
+      });
     }
-    dossierResults.push({ sessionId: session.id, sourceReference: session.sourceReference, dossier: relative(projectDir, dossierPath), handoff: relative(projectDir, handoffPath), supervisorStatus: status, reason, handoffStatus: handoff?.status ?? null });
-    if (status === "escalated") {
-      const result = {
-        schemaVersion: 1,
-        runId: master.runId,
-        attempt,
-        status: "escalated",
-        failure: { phase: "dossier", sessionId: session.id, reason, supervisorResult },
-        selectionManifest: relative(projectDir, manifestPath),
-        selectedSessions: selectedSessions.map((item) => item.id),
-        dossierCount: dossierResults.length,
-        dossierResults,
-        aggregator: null,
-        convergence: { status: "blocked_by_extraction_failure", backtestRequired: true },
-        unknowns: ["The semantic extraction did not complete; no cross-session workflow was aggregated.", "The failed worker may have left partial events, but those are not treated as a dossier."],
-      };
-      writeJson(path.join(attemptDir, "result.json"), result);
-      console.log(JSON.stringify(result, null, 2));
-      process.exitCode = 1;
-      return;
+  } else {
+    for (let index = 0; index < selectedSessions.length; index += 1) {
+      const session = selectedSessions[index];
+      const workerDir = path.join(dossierDir, `${String(index + 1).padStart(2, "0")}-${session.id}`);
+      const evidencePacketPath = path.join(workerDir, "evidence-packet.json");
+      const dossierPath = path.join(workerDir, "dossier.json");
+      const handoffPath = path.join(workerDir, "handoff.json");
+      const evidencePacket = buildSessionEvidencePacket({ sourceReference: session.sourceReference, sessionId: session.id, interestMetadata: session });
+      writeJson(evidencePacketPath, evidencePacket);
+      const contract = workerContract({ master, session, index, total: selectedSessions.length, interestPath, evidencePacketPath, dossierPath, handoffPath });
+      const workerContractPath = path.join(workerDir, "contract.json");
+      writeJson(workerContractPath, contract);
+      console.error(`dossier ${index + 1}/${selectedSessions.length}: ${session.id} (${evidencePacket.statistics.packetCharacters} packet chars)`);
+      const supervisorResult = await supervisePi({ contract, contractPath: workerContractPath, command: node, args: piArgs, cwd: projectDir, env: { PI_CODING_AGENT_DIR: agentDir }, stallMs, maxRuntimeMs: runtimeMs });
+      let handoff = null;
+      let status = supervisorResult.status;
+      let reason = supervisorResult.reason ?? null;
+      if (status !== "escalated") {
+        try {
+          handoff = validateDossierHandoff(handoffPath, {
+            expectedRunId: contract.runId,
+            expectedSessionId: session.id,
+            dossierPath,
+            evidencePacketPath,
+          });
+          if (!fs.existsSync(dossierPath)) throw new Error(`missing dossier: ${dossierPath}`);
+        } catch (error) {
+          status = "escalated";
+          reason = "invalid_dossier_handoff";
+          supervisorResult.error = error.message;
+        }
+      }
+      dossierResults.push({ sessionId: session.id, sourceReference: session.sourceReference, dossier: relative(projectDir, dossierPath), handoff: relative(projectDir, handoffPath), supervisorStatus: status, reason, handoffStatus: handoff?.status ?? null });
+      if (status === "escalated") {
+        const result = {
+          schemaVersion: 1,
+          runId: master.runId,
+          attempt,
+          status: "escalated",
+          failure: { phase: "dossier", sessionId: session.id, reason, supervisorResult },
+          selectionManifest: relative(projectDir, manifestPath),
+          selectedSessions: selectedSessions.map((item) => item.id),
+          dossierCount: dossierResults.length,
+          dossierResults,
+          aggregator: null,
+          convergence: { status: "blocked_by_extraction_failure", backtestRequired: true },
+          unknowns: ["The semantic extraction did not complete; no cross-session workflow was aggregated.", "The failed worker may have left partial events, but those are not treated as a dossier."],
+        };
+        writeJson(path.join(attemptDir, "result.json"), result);
+        console.log(JSON.stringify(result, null, 2));
+        process.exitCode = 1;
+        return;
+      }
     }
   }
 
