@@ -1,5 +1,9 @@
 id: session-pattern-extraction
 
+repeat:
+  from: backtest
+  until: {ref: adjust.decision.accepted}
+
 steps:
   identify:
     inputs:
@@ -73,10 +77,9 @@ steps:
   converge:
     inputs:
       candidate: {ref: adjust.candidate}
-      decision: {ref: adjust.decision}
       holdout: {ref: identify.inventory.holdout}
     procedure:
-      - Return the candidate for another backtest when adjustment is required; otherwise freeze it and evaluate it once on holdout.
+      - Freeze the converged candidate and evaluate it once on holdout.
     outputs:
       candidate:
         doc: Current candidate, frozen only after convergence.

@@ -1,4 +1,7 @@
 id: "evidence-bounded-product-and-engineering-work-under-uncertainty"
+repeat:
+  from: "inspect"
+  until: {ref: "resolve.result.accepted"}
 steps:
   frame:
     inputs:
@@ -52,23 +55,13 @@ steps:
         doc: "Classified result, mismatch, or failure."
         acceptance:
           - "Blocked, partial, interrupted, and failed results retain their actual classification."
-  intervene:
+  resolve:
     inputs:
       classification: {ref: "classify.classification"}
     procedure:
-      - "Intervene with the smallest evidence-backed change, route, or stop."
+      - "Make the smallest evidence-backed change, route, or conclusion."
     outputs:
-      intervention:
-        doc: "Smallest evidence-backed change, route, check, or stop."
+      result:
+        doc: "Concrete result or reference supported by the available evidence."
         acceptance:
-          - "The response is the smallest supported change, route, check, or stop, returned as a concrete result or reference."
-  repeat:
-    inputs:
-      intervention: {ref: "intervene.intervention"}
-    procedure:
-      - "Repeat, stop, or accept only a scoped claim at the evidence gate."
-    outputs:
-      decision:
-        doc: "Repeat, stop, or accept_scoped_claim."
-        acceptance:
-          - "The decision is repeat, stop, or accept_scoped_claim, and any accepted claim stays within the evidence boundary."
+          - "The result is accepted only when the scoped claim is supported or an explicit stop condition is reached."

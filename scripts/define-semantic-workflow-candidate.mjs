@@ -95,17 +95,16 @@ export function buildCandidateDefinition(report) {
     throw new Error(`unsupported extracted workflow status: ${extracted.status}`);
   }
 
-  const workflowSteps = extracted.steps.filter((step) => !/^Update durable evidence and state$/i.test(step.name));
-  const ids = workflowSteps.map(stepId).map((id) => id.replace(/^\d+-/, ""));
-  const outputNames = ["frame", "next_action", "scoped_result", "verification", "classification", "intervention", "decision"];
+  const workflowSteps = extracted.steps.filter((step) => !/^(Update durable evidence and state|Repeat, stop, or accept only a scoped claim at the evidence gate)$/i.test(step.name));
+  const ids = workflowSteps.map(stepId).map((id, index) => index === 5 ? "resolve" : id.replace(/^\d+-/, ""));
+  const outputNames = ["frame", "next_action", "scoped_result", "verification", "classification", "result"];
   const outputDocs = [
     "Intent, constraints, uncertainty, work mode, and evidence boundary.",
     "Bounded next action and stop conditions.",
     "Result of the scoped execution.",
     "Observed evidence from the relevant boundaries.",
     "Classified result, mismatch, or failure.",
-    "Smallest evidence-backed change, route, check, or stop.",
-    "Repeat, stop, or accept_scoped_claim.",
+    "Concrete result or reference supported by the available evidence.",
   ];
   const acceptance = [
     "Intent, constraints, uncertainty, work mode, and evidence boundary are explicit.",
@@ -113,8 +112,7 @@ export function buildCandidateDefinition(report) {
     "Execution stays within scope and preserves required provenance and rollback.",
     "Relevant positive, negative, runtime, and external boundaries are checked without broadening the claim.",
     "Blocked, partial, interrupted, and failed results retain their actual classification.",
-    "The response is the smallest supported change, route, check, or stop, returned as a concrete result or reference.",
-    "The decision is repeat, stop, or accept_scoped_claim, and any accepted claim stays within the evidence boundary.",
+    "The result is accepted only when the scoped claim is supported or an explicit stop condition is reached.",
   ];
   const steps = Object.fromEntries(workflowSteps.map((step, index) => {
     const supportCount = step.supportCount ?? step.iterationOrBoundedFollowUpSupportCount;
@@ -135,6 +133,8 @@ export function buildCandidateDefinition(report) {
     };
     const procedure = index === 1
       ? "Inspect the work and choose a bounded next probe or decision."
+      : index === 5
+        ? "Make the smallest evidence-backed change, route, or conclusion."
       : `${step.name.replace(/\.$/, "")}.`;
     return [ids[index], {
       inputs,
@@ -145,6 +145,10 @@ export function buildCandidateDefinition(report) {
 
   return {
     id: slugify(report.topic.name),
+    repeat: {
+      from: "inspect",
+      until: { ref: "resolve.result.accepted" },
+    },
     steps,
   };
 }
