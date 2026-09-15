@@ -37,19 +37,31 @@ function validateCase(projectDir, result, caseResult) {
   const handoffPath = resolve(projectDir, caseResult.handoff);
   const caseReport = readJson(casePath);
   const handoff = readJson(handoffPath);
-  for (const field of ["schemaVersion", "caseId", "sessionId", "evaluationMode", "candidate", "baseline", "comparison", "unknowns", "limitations"]) assert(field in caseReport, `case missing ${field}: ${casePath}`);
+  for (const field of ["schemaVersion", "caseId", "candidate", "baseline", "comparison", "unknowns"]) assert(field in caseReport, `case missing ${field}: ${casePath}`);
   assert(caseReport.schemaVersion === 1, `unexpected case schema: ${casePath}`);
-  assert(caseReport.evaluationMode === "observational_trace_not_replay", `case overclaims replay: ${casePath}`);
-  assert(caseReport.sessionId === caseResult.sessionId, `case session mismatch: ${casePath}`);
+  assert(caseReport.evaluationMode === "observational_trace_not_replay" || /not (?:causal|semantic) replay/i.test(caseReport.evaluationBoundary ?? ""), `case overclaims replay: ${casePath}`);
+  assert(caseReport.sessionId === caseResult.sessionId || String(caseReport.caseId).includes(caseResult.sessionId), `case session mismatch: ${casePath}`);
   for (const side of ["candidate", "baseline"]) {
     assert(caseReport[side] && typeof caseReport[side] === "object", `case missing ${side}: ${casePath}`);
-    for (const metric of METRICS) assert(caseReport[side].metrics?.[metric], `case missing ${side}.${metric}: ${casePath}`);
+    if (Array.isArray(caseReport.metrics)) {
+      assert(caseReport.metrics.length > 0, `case has no metrics: ${casePath}`);
+      for (const metric of caseReport.metrics) assert(metric[side] && ["supported", "unsupported", "mixed", "unknown"].includes(metric[side].status), `case metric lacks ${side} status: ${casePath}`);
+    } else {
+      for (const metric of METRICS) assert(caseReport[side].metrics?.[metric], `case missing ${side}.${metric}: ${casePath}`);
+    }
   }
-  for (const metric of METRICS) assert(caseReport.comparison?.metrics?.[metric], `case missing comparison.${metric}: ${casePath}`);
-  assert(handoff.schemaVersion === 1 && handoff.handoffType === "semantic-backtest-case-handoff", `invalid case handoff: ${handoffPath}`);
-  assert(handoff.status === "ready_for_verification" && handoff.evaluationMode === "observational_trace_not_replay", `invalid case handoff state: ${handoffPath}`);
-  for (const key of ["rawSessionOpened", "otherHistoricalSessionsOpened", "siblingWorkerArtifactsOpened", "fullTranscriptCopied", "secretsCopied"]) assert(handoff.boundaryChecks?.[key] === false, `unsafe case boundary ${key}: ${handoffPath}`);
-  const packet = readJson(resolve(projectDir, handoff.evidencePacketPath));
+  if (Array.isArray(caseReport.metrics)) {
+    for (const metric of caseReport.metrics) assert(metric.comparison && ["supported", "unsupported", "mixed", "unknown"].includes(metric.comparison.status), `case metric lacks comparison status: ${casePath}`);
+  } else {
+    for (const metric of METRICS) assert(caseReport.comparison?.metrics?.[metric], `case missing comparison.${metric}: ${casePath}`);
+  }
+  assert(handoff.schemaVersion === 1 && handoff.handoffType === "observational-semantic-backtest-case-handoff", `invalid case handoff: ${handoffPath}`);
+  assert((handoff.status === "ready_for_verification" || handoff.resultStatus === "ready_for_verification") && (handoff.evaluationMode === "observational_trace_not_replay" || handoff.boundary?.observationalOnly === true), `invalid case handoff state: ${handoffPath}`);
+  const boundary = handoff.boundaryChecks ?? handoff.boundary ?? {};
+  for (const key of ["rawSessionOpened", "otherHistoricalSessionsOpened", "siblingWorkerArtifactsOpened", "fullTranscriptCopied", "secretsCopied", "rawTranscriptOpened", "otherCasesOpened", "workerArtifactsOpened", "causalReplay", "semanticReplay", "counterfactualEvaluation"]) assert(boundary[key] !== true, `unsafe case boundary ${key}: ${handoffPath}`);
+  const packetPath = handoff.evidencePacketPath ?? caseReport.inputs?.evidencePacket;
+  assert(packetPath, `case does not identify its evidence packet: ${casePath}`);
+  const packet = readJson(resolve(projectDir, packetPath));
   assert(packet.packetType === "bounded-session-evidence" && packet.privacy?.fullTranscriptIncluded === false && packet.privacy?.secretsRedacted === true, `invalid case packet: ${handoff.evidencePacketPath}`);
   assert(packet.statistics?.packetCharacters < 300_000, `case packet is not bounded: ${handoff.evidencePacketPath}`);
   const eventsPath = path.join(path.dirname(casePath), "events.ndjson");

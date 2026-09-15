@@ -129,7 +129,8 @@ function workerContract({ master, session, index, total, interestPath, evidenceP
       "The product-factory/product-factory-pi signal is a discovery hint, not proof that the skill was followed. Separate explicit behavior from mere reference.",
       "Write a bounded semantic dossier as JSON without copying transcript blocks or secrets, then write the required handoff.",
       `Read the evidence packet at ${evidencePacketPath}. Write the dossier to ${dossierPath} and the handoff to ${handoffPath}.`,
-      "The handoff must be JSON with schemaVersion 1, handoffType semantic-session-dossier-handoff, runId, sessionId, status ready_for_verification, dossierPath, evidencePacketPath, non-empty evidenceReferences, boundaryChecks, summary, unknowns, and intervention.",
+      `The exact dossier and handoff runId is ${runId}; copy that value exactly and do not use the parent runId ${master.runId}. The exact sessionId is ${session.id}.`,
+      "The handoff must be JSON with schemaVersion 1, handoffType semantic-session-dossier-handoff, the exact runId and sessionId above, status ready_for_verification, dossierPath, evidencePacketPath, non-empty evidenceReferences, boundaryChecks, summary, unknowns, and intervention.",
     ].join(" "),
     projectDir: master.projectDir,
     claimBoundary: {
@@ -184,6 +185,7 @@ function workerContract({ master, session, index, total, interestPath, evidenceP
       },
       outputDossier: relative(master.projectDir, dossierPath),
       outputHandoff: relative(master.projectDir, handoffPath),
+      expectedHandoffRunId: runId,
     },
   };
 }

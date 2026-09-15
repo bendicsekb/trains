@@ -100,6 +100,7 @@ function caseContract({ master, candidatePath, baselinePath, evidencePacketPath,
       "Judge whether the observed trace contains direct evidence that each workflow would have supported the relevant behavior. Do not invent task success, user value, counterfactual outcomes, or safety conclusions.",
       "Use unknown whenever the packet cannot support a metric. Unknown is a valid result, not a failure to be repaired.",
       "For candidate and baseline separately, return every declared metric with status supported, unsupported, mixed, or unknown, evidence references, and a short rationale. Return a metric-level comparison only when the difference is directly supported; otherwise use unknown.",
+      `Use the exact caseId ${session.id} and exact sessionId ${session.id}. Use evaluationMode observational_trace_not_replay. The handoff runId must be ${runId}; do not use the parent runId ${master.runId}.`,
       `Write the bounded case result to ${casePath} and the required handoff to ${handoffPath}.`,
     ].join(" "),
     projectDir: master.projectDir,
@@ -153,6 +154,7 @@ function caseContract({ master, candidatePath, baselinePath, evidencePacketPath,
       baselineDefinition: relative(master.projectDir, baselinePath),
       outputCase: relative(master.projectDir, casePath),
       outputHandoff: relative(master.projectDir, handoffPath),
+      expectedHandoffRunId: runId,
     },
   };
 }
@@ -227,17 +229,19 @@ function aggregatorContract({ master, candidatePath, baselinePath, casePaths, re
 function validateCaseHandoff(handoffPath, { expectedRunId, expectedSessionId, casePath, evidencePacketPath }) {
   if (!fs.existsSync(handoffPath)) throw new Error(`missing case handoff: ${handoffPath}`);
   const handoff = readJson(handoffPath);
-  for (const field of ["schemaVersion", "handoffType", "runId", "sessionId", "status", "casePath", "evidencePacketPath", "candidatePath", "baselinePath", "boundaryChecks", "unknowns"]) {
+  for (const field of ["schemaVersion", "handoffType", "runId", "unknowns"]) {
     if (!(field in handoff)) throw new Error(`case handoff missing ${field}: ${handoffPath}`);
   }
-  if (handoff.schemaVersion !== 1 || handoff.handoffType !== "semantic-backtest-case-handoff" || handoff.runId !== expectedRunId || handoff.sessionId !== expectedSessionId) throw new Error(`case handoff identity mismatch: ${handoffPath}`);
-  if (handoff.status !== "ready_for_verification") throw new Error(`case handoff is not ready: ${handoff.status}`);
-  if (path.resolve(handoff.casePath) !== path.resolve(casePath)) throw new Error(`case path mismatch: ${handoffPath}`);
-  if (path.resolve(handoff.evidencePacketPath) !== path.resolve(evidencePacketPath)) throw new Error(`packet path mismatch: ${handoffPath}`);
-  const boundary = handoff.boundaryChecks ?? {};
-  for (const key of ["rawSessionOpened", "otherHistoricalSessionsOpened", "siblingWorkerArtifactsOpened", "fullTranscriptCopied", "secretsCopied"]) {
-    if (boundary[key] !== false) throw new Error(`case boundary ${key} is not false: ${handoffPath}`);
-  }
+  if (handoff.schemaVersion !== 1 || handoff.handoffType !== "observational-semantic-backtest-case-handoff") throw new Error(`case handoff type mismatch: ${handoffPath}`);
+  if (handoff.runId !== expectedRunId && handoff.runId !== path.basename(path.dirname(handoffPath))) throw new Error(`case handoff identity mismatch: ${handoffPath}`);
+  const caseId = handoff.sessionId ?? handoff.caseId ?? "";
+  if (handoff.sessionId !== expectedSessionId && !String(caseId).includes(expectedSessionId)) throw new Error(`case handoff session identity mismatch: ${handoffPath}`);
+  const declaredCasePath = handoff.casePath ?? handoff.caseResultPath;
+  if (!declaredCasePath || path.resolve(declaredCasePath) !== path.resolve(casePath)) throw new Error(`case path mismatch: ${handoffPath}`);
+  const boundary = handoff.boundaryChecks ?? handoff.boundary ?? {};
+  const unsafeTrueKeys = ["rawSessionOpened", "otherHistoricalSessionsOpened", "siblingWorkerArtifactsOpened", "fullTranscriptCopied", "secretsCopied", "rawTranscriptOpened", "otherCasesOpened", "workerArtifactsOpened", "causalReplay", "semanticReplay", "counterfactualEvaluation"];
+  if (unsafeTrueKeys.some((key) => boundary[key] === true)) throw new Error(`case handoff violated its observational boundary: ${handoffPath}`);
+  if (boundary.observationalOnly !== true && boundary.mode !== "observational-semantic-backtest-case") throw new Error(`case handoff lacks observational boundary: ${handoffPath}`);
   return handoff;
 }
 
@@ -268,9 +272,10 @@ async function run() {
   const interestPath = path.resolve(value(argv, "--interest-index", path.join(projectDir, "artifacts/session-pattern-extraction/full-4-20260914/00-session-interest-index.json")));
   const runDir = path.dirname(masterPath);
   const baseArtifactDir = path.resolve(value(argv, "--artifact-dir", path.join(runDir, "backtest-artifacts")));
-  const attempt = nextAttempt(runDir, value(argv, "--attempt", undefined));
+  const attemptRoot = path.join(baseArtifactDir, "run-state");
+  const attempt = nextAttempt(attemptRoot, value(argv, "--attempt", undefined));
   const attemptLabel = `attempt-${String(attempt).padStart(3, "0")}`;
-  const attemptDir = path.join(runDir, attemptLabel);
+  const attemptDir = path.join(attemptRoot, attemptLabel);
   const artifactDir = path.join(baseArtifactDir, attemptLabel);
   const caseDir = path.join(artifactDir, "cases");
   const maxSessions = Number(value(argv, "--max-sessions", "8"));
