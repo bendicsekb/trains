@@ -112,6 +112,41 @@ steps:
   assert.equal(machine.state.frames[0].values.first.result, "first-result");
 });
 
+test("replacement-session extension instance restores state before settling a car", async () => {
+  const directory = tempDir();
+  const trainPath = writeTrain(directory, "single.yaml", [
+    "id: single",
+    "steps:",
+    "  first:",
+    "    inputs:",
+    "      request: {doc: Work request.}",
+    "    procedure:",
+    "      - Produce the first result.",
+    "    outputs:",
+    "      result:",
+    "        doc: First result.",
+    "        acceptance: [The result is concrete.]",
+  ].join("\n"));
+  const fake = fakePiContext(directory);
+  const firstMachine = new TrainMachine({ pi: { appendEntry() {}, sendUserMessage() {} }, id: () => "run-replacement" });
+  firstMachine.attachContext(fake.root);
+  await firstMachine.start(trainPath, { request: "ship it" });
+  await firstMachine.acceptHandoff({
+    outputs: { result: "first-result" },
+    summary: "Produced the first result.",
+    evidenceRefs: ["test:first"],
+    claimsNotMade: [],
+  });
+
+  const replacementMachine = new TrainMachine({ pi: { appendEntry() {}, sendUserMessage() {} }, id: () => "unused" });
+  replacementMachine.attachContext(fake.sessions[1]);
+  assert.equal(replacementMachine.state, null);
+  await replacementMachine.onSettled(fake.sessions[1]);
+
+  assert.equal(replacementMachine.status().status, "completed");
+  assert.deepEqual(replacementMachine.state.outputs, { result: "first-result" });
+});
+
 test("native extension carries repeat feedback and nested outputs through frames", async () => {
   const directory = tempDir();
   const childPath = writeTrain(directory, "child.yaml", `
@@ -185,5 +220,5 @@ test("extension registers Pi-native commands and the terminating handoff tool", 
   createTrainExtension()(pi);
   assert.ok(tools.has("train_handoff"));
   assert.equal(tools.get("train_handoff").parameters.required.includes("outputs"), true);
-  for (const name of ["train", "train-status", "train-steer", "train-pause", "train-resume", "train-cancel"]) assert.ok(commands.has(name), name);
+  for (const name of ["train", "train-status", "train-advance", "train-steer", "train-pause", "train-resume", "train-cancel"]) assert.ok(commands.has(name), name);
 });

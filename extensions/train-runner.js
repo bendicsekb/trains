@@ -160,6 +160,7 @@ export class TrainMachine {
     this.state = null;
     this.ctx = null;
     this.driving = false;
+    this.advanceQueued = false;
   }
 
   attachContext(ctx) {
@@ -389,6 +390,9 @@ export class TrainMachine {
   }
 
   async acceptHandoff(params) {
+    // The handoff tool may be served by the replacement-session instance,
+    // whose startup snapshot predates the withSession running transition.
+    if (this.ctx) this.restore(this.ctx);
     if (!this.state?.active || !["running", "starting"].includes(this.state.status)) throw new Error("No running car is waiting for a handoff");
     if (this.state.active.sessionId && this.ctx?.sessionManager?.getSessionId?.() !== this.state.active.sessionId) throw new Error("Handoff came from a stale Pi session");
     if (!isObject(params?.outputs)) throw new Error("outputs must be an object");
@@ -408,7 +412,14 @@ export class TrainMachine {
     return `Handoff recorded for ${this.state.active.stepId}; Pi will advance after agent_settled.`;
   }
 
-  async onSettled() {
+  async onSettled(ctx = this.ctx) {
+    // Pi replacement runtimes can observe setup and withSession through
+    // different extension instances. Always take the latest durable snapshot
+    // before consuming the completion boundary.
+    if (ctx) {
+      this.attachContext(ctx);
+      this.restore(ctx);
+    }
     if (!this.state?.active || this.state.status !== "running") return;
     if (!this.state.active.handoff) {
       this.markBlocked(`car ${this.state.active.stepId} settled without calling ${HANDOFF_TOOL}`);
@@ -421,6 +432,26 @@ export class TrainMachine {
     const outputs = mapLeafOutputs(train, frame, active.stepId, active.handoff.outputs);
     await this.finishInvocation(frame, active.stepId, active.iteration, active.invocation, outputs);
     await this.drive();
+  }
+
+  queueAdvance() {
+    if (!this.state?.active || this.advanceQueued) return;
+    this.advanceQueued = true;
+    if (typeof this.pi?.sendUserMessage !== "function") {
+      void this.onSettled(this.ctx);
+      return;
+    }
+    try {
+      this.pi.sendUserMessage("/train-advance", { expandPromptTemplates: true });
+    } catch (error) {
+      this.advanceQueued = false;
+      this.markBlocked("Unable to queue train advancement: " + error.message);
+    }
+  }
+
+  async advance(ctx) {
+    this.advanceQueued = false;
+    await this.onSettled(ctx);
   }
 
   async steer(text) {
@@ -502,7 +533,7 @@ export function createTrainExtension(options = {}) {
       }
     });
 
-    pi.on("agent_settled", async () => machine.onSettled());
+    pi.on("agent_settled", async () => machine.queueAdvance());
 
     pi.registerTool({
       name: HANDOFF_TOOL,
@@ -543,6 +574,14 @@ export function createTrainExtension(options = {}) {
       handler: async (_args, ctx) => {
         machine.attachContext(ctx);
         ctx.ui.notify(JSON.stringify(machine.status()), "info");
+      },
+    });
+
+    pi.registerCommand("train-advance", {
+      description: "Advance the active train after the current Pi car settles",
+      handler: async (_args, ctx) => {
+        machine.attachContext(ctx);
+        await machine.advance(ctx);
       },
     });
 

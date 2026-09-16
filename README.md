@@ -105,7 +105,10 @@ Inside Pi, start a train with:
 The extension is the state machine: it loads the lean YAML, schedules runnable
 cars, creates a fresh Pi session with `newSession()` for every invocation,
 passes only declared inputs, and advances only after the car calls the
-terminating `train_handoff` tool and Pi emits `agent_settled`. Complete state
+terminating `train_handoff` tool and Pi emits `agent_settled`. In RPC and
+replacement-session runtimes, that event queues the internal
+`/train-advance` command so the next transition re-enters through a
+command-capable context before calling `newSession()`. Complete state
 snapshots are persisted as `trains.state.v1` custom session entries, so the
 controller can reconstruct itself after a session reload. Nested procedures are
 call frames, and car-level repeats create another fresh invocation with
