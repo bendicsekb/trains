@@ -1,0 +1,57 @@
+id: slow-loop
+
+steps:
+  inspect_code:
+    inputs:
+      book: {doc: "One engineering book or body of knowledge to use as the inspection lens for the target codebase."}
+    procedure:
+      - Inspect the target codebase through the supplied book or body of knowledge and identify concrete rule candidates, recording locations, observations, likely consequences, and uncertainty; return an empty candidate set when the evidence does not justify a rule.
+    outputs:
+      book:
+        doc: The supplied book or body of knowledge preserved as the inspection lens for downstream concept matching.
+        acceptance:
+          - The downstream lens is exactly the supplied book or body of knowledge and contains no silently substituted source.
+      candidates:
+        doc: "Evidence-backed candidate engineering rules found in the codebase, including locations, observations, likely consequences, and uncertainty."
+        acceptance:
+          - The supplied book or body of knowledge is preserved as the sole inspection lens.
+          - Every candidate names an exact code location and separates an observed fact from the proposed rule or inference.
+          - Candidates are limited to issues relevant to the supplied lens; unsupported or purely stylistic suggestions are rejected or marked uncertain.
+
+  match_concepts:
+    inputs:
+      book: {ref: inspect_code.book}
+      candidates: {ref: inspect_code.candidates}
+    procedure:
+      - Match each candidate to a specific concept or passage from the selected book, reject weak matches, and explain the expected improvement and remaining uncertainty for every surviving candidate.
+    outputs:
+      mappings:
+        doc: "Candidate-to-book mappings with the supporting concept, justification, rejected candidates, and a bounded change recommendation."
+        acceptance:
+          - Every candidate is mapped, rejected, or deferred with an explicit reason.
+          - Every surviving mapping identifies the book concept, the code evidence, the expected benefit, and the uncertainty or trade-off.
+
+  define_tests:
+    inputs:
+      mappings: {ref: match_concepts.mappings}
+    procedure:
+      - Define the smallest tests that can demonstrate each justified change and guard its intended behavior, including a regression or characterization test where the current behavior must be preserved.
+    outputs:
+      tests:
+        doc: "Test plan or test changes for the justified book-guided improvements, including expected pre-change and post-change behavior."
+        acceptance:
+          - Every surviving change has an observable acceptance test tied to its mapped concept and code location.
+          - The plan preserves required existing behavior and records candidates that should not be changed.
+
+  implement:
+    inputs:
+      mappings: {ref: match_concepts.mappings}
+      tests: {ref: define_tests.tests}
+    procedure:
+      - Implement only the justified improvements, add or update the defined tests, run the relevant checks, and report unchanged or deferred candidates instead of manufacturing work.
+    outputs:
+      revision:
+        doc: "Implemented code and tests, or an explicit no-change result, with verification results and deferred candidates."
+        acceptance:
+          - Every change is traceable to a surviving book mapping and a defined test; no unsupported improvement is included.
+          - Verification results are concrete and honest, including failures or an explicit reason when no change was justified.

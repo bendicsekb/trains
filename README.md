@@ -73,6 +73,8 @@ The repaired backtest is [scripts/run-semantic-workflow-backtest.mjs](scripts/ru
 
 The workflow must preserve evidence links for every extracted rule. A pattern is not promoted merely because it appears often: the candidate must also make the observed outcome easier to reproduce, avoid material regressions against the baseline, and expose uncertainty instead of silently generalising an exception.
 
+The book-guided slow loop is [workflows/slow-loop.yaml](workflows/slow-loop.yaml). It takes one engineering book or body of knowledge as input, inspects the target codebase for evidence-backed rule candidates, matches them to the book, defines tests, and implements only the justified changes. An empty candidate set or no-change result is valid when the inspection does not support an improvement.
+
 ## Goal
 
 The goal is to externalise recurring human engineering workflows so agents can execute them with less micromanagement.
