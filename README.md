@@ -24,6 +24,8 @@ A **handoff** is the explicit output of a train that another train can consume.
 
 The existence of a clear handoff matters more than choosing one universal handoff format up front.
 
+By default, crossing a handoff implies a fresh model context; inherited conversational history must be explicit rather than implicit.
+
 ### Workflow
 
 A **workflow** is a train composed of other trains.
@@ -48,6 +50,8 @@ The goal is to externalise recurring human engineering workflows so agents can e
 
 The human should increasingly provide intent and guidance at the highest useful level, while trains encode how recurring work is carried out and handed from one stage to the next.
 
+A train also forms a context boundary: a new invocation should normally start from fresh model context and consume declared inputs and handoffs rather than inherit the full reasoning trajectory of upstream work. Handoffs therefore act as intentional compaction points, carrying forward decision-relevant state while discarding incidental conversation, exploration, and failed paths. This limits trajectory poisoning and keeps downstream work in a cleaner context.
+
 ## Open questions
 
 - What is the minimal YAML schema for a train?
@@ -55,3 +59,7 @@ The human should increasingly provide intent and guidance at the highest useful 
 - Which handoff formats should be standardised, if any?
 - How should trains express dependencies and composition?
 - When is inconsistency significant enough to justify creating or refining a train?
+
+## References
+
+The context-boundary and intentional-compaction framing is informed by Dex Horthy's discussion of **trajectory poisoning** and **intentional compaction** with Gergely Orosz on *The Pragmatic Engineer*: [Context engineering with Dex Horthy](https://newsletter.pragmaticengineer.com/p/context-engineering-with-dex-horthy) (15 July 2026).
