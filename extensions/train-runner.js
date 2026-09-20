@@ -363,7 +363,10 @@ export class TrainMachine {
       "Declared outputs and acceptance contracts:",
       renderOutputs(step.outputs),
       "",
-      `When the car is complete, call ${HANDOFF_TOOL} exactly once with every declared output, evidenceRefs, claimsNotMade, and a concise summary. The handoff is the only completion signal. If you are blocked, explain the blocker and do not fabricate outputs.`,
+      `When the car is complete, call ${HANDOFF_TOOL} exactly once. The arguments must have this top-level shape:`,
+      '{"outputs":{"<declared-output>":"<value>"},"summary":"<concise summary>","evidenceRefs":["<source reference>"],"claimsNotMade":["<uncertainty or claim not made>"]}',
+      "Put every declared output under outputs; summary is a required top-level string, not an output. evidenceRefs and claimsNotMade are required top-level arrays.",
+      "The handoff is the only completion signal. If you are blocked, explain the blocker and do not fabricate outputs.",
     ].join("\n");
     const current = this.ctx;
     if (!current?.newSession) throw new Error("Pi command context does not support newSession; run the train from an interactive Pi extension context");
@@ -540,7 +543,7 @@ export function createTrainExtension(options = {}) {
       label: "Train handoff",
       description: "Finish the current Trains car with its declared outputs and evidence boundary.",
       promptSnippet: "Complete the current train car with a structured handoff",
-      promptGuidelines: ["Call this exactly once when the car is complete. Do not invent undeclared outputs."],
+      promptGuidelines: ["Call this exactly once when the car is complete. Put declared values under outputs and provide top-level summary, evidenceRefs, and claimsNotMade. Do not invent undeclared outputs."],
       parameters: HANDOFF_SCHEMA,
       async execute(_toolCallId, params) {
         const message = await machine.acceptHandoff(params);

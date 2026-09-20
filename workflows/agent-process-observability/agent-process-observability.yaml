@@ -1,0 +1,92 @@
+id: agent-process-observability
+
+steps:
+  frame:
+    inputs:
+      sessions: {doc: Historical or live session traces with stable source references.}
+      target: {doc: "The recurring task, workflow, or failure pattern to inspect."}
+      constraints: {doc: "Optional privacy, safety, scope, and evidence constraints."}
+    procedure:
+      - Define the study boundary, corpus references, evidence boundary, and the distinction between observed behavior and inferred intent from the declared inputs.
+      - Do not inspect or analyze session contents in this car; leave event extraction, timing, workflow reconstruction, and friction analysis to downstream cars.
+    outputs:
+      study:
+        doc: Study boundary, target, session corpus, constraints, evidence boundary, and comparison assumptions.
+        acceptance:
+          - The study identifies the sessions and states what can and cannot be inferred from them.
+
+  trace:
+    inputs:
+      study: {ref: frame.study}
+    procedure:
+      - Extract ordered actions, tool calls, agent messages, interventions, state transitions, outcomes, and relevant process or tool references from each session.
+      - Use bounded structured extraction where possible; do not dump the raw transcript or repeat large tool outputs, and retain compact counts, timestamps, summaries, and source references instead.
+    outputs:
+      traces:
+        doc: Normalized per-session traces with source references and preserved uncertainty.
+        acceptance:
+          - Every material trace event links to its source and unsupported events remain unknown.
+
+  reconstruct:
+    inputs:
+      traces: {ref: trace.traces}
+      study: {ref: frame.study}
+    procedure:
+      - Reconstruct the actual path for each session and identify a supported intended or canonical path when one exists.
+      - Treat agent behavior as evidence about system affordances; do not label a detour as agent fault without ruling out process, tool, environment, and evidence-boundary causes.
+    outputs:
+      execution:
+        doc: Actual paths, outcomes, deviations, recoveries, interventions, candidate canonical paths, and uncertainty by session.
+        acceptance:
+          - Actual observations are separated from inferred intent and every claimed deviation has evidence.
+
+  measure:
+    inputs:
+      execution: {ref: reconstruct.execution}
+    procedure:
+      - Quantify comparable path overhead, detours, retries, time, tokens, tool calls, and recovery tax when available.
+      - Preserve unknown metrics instead of inventing values or comparing unlike cases.
+    outputs:
+      friction:
+        doc: Per-session and aggregate friction measures with definitions, denominators, missingness, and comparison baseline.
+        acceptance:
+          - Every metric defines what it measures and distinguishes observed values from estimates and unknowns.
+
+  diagnose:
+    inputs:
+      execution: {ref: reconstruct.execution}
+      friction: {ref: measure.friction}
+    procedure:
+      - Perform a bounded root-cause analysis and classify material deviations as agent reasoning, missing or unclear process, tool affordance or default, environment, or insufficient evidence.
+      - Identify repeated system friction before assigning an individual-agent explanation.
+    outputs:
+      diagnosis:
+        doc: Evidence-backed causal findings, competing explanations, recurrence, impact, and unresolved uncertainty.
+        acceptance:
+          - Each material finding names its evidence, causal confidence, affected boundary, and remaining alternatives.
+
+  design:
+    inputs:
+      diagnosis: {ref: diagnose.diagnosis}
+      friction: {ref: measure.friction}
+    procedure:
+      - Propose the smallest tool, process, skill, or default change that makes the desired action the most natural next action.
+      - State the predicted behavioral change, safety tradeoffs, and what evidence would falsify the proposal.
+    outputs:
+      interventions:
+        doc: Prioritized intervention proposals with owners or boundaries, predicted effects, risks, and falsifiable tests.
+        acceptance:
+          - Every proposal is traceable to a diagnosis and includes a measurable expected effect.
+
+  evaluate:
+    inputs:
+      execution: {ref: reconstruct.execution}
+      friction: {ref: measure.friction}
+      interventions: {ref: design.interventions}
+    procedure:
+      - Define a bounded follow-up evaluation for whether the intervention improves path choice, recovery tax, and outcome quality without harmful regressions.
+    outputs:
+      evaluation:
+        doc: Follow-up evaluation plan with comparison design, success metrics, guardrails, evidence requirements, and next decision.
+        acceptance:
+          - The plan can distinguish improved natural-path selection from mere completion and retains unknown results.

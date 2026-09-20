@@ -219,6 +219,7 @@ test("extension registers Pi-native commands and the terminating handoff tool", 
   };
   createTrainExtension()(pi);
   assert.ok(tools.has("train_handoff"));
-  assert.equal(tools.get("train_handoff").parameters.required.includes("outputs"), true);
+  assert.deepEqual(tools.get("train_handoff").parameters.required, ["outputs", "summary", "evidenceRefs", "claimsNotMade"]);
+  assert.match(tools.get("train_handoff").promptGuidelines[0], /top-level summary/);
   for (const name of ["train", "train-status", "train-advance", "train-steer", "train-pause", "train-resume", "train-cancel"]) assert.ok(commands.has(name), name);
 });
