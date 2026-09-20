@@ -36,6 +36,6 @@ steps:
         acceptance:
           - Repeat is chosen only for an evidence-backed adjustment.
       result:
-        doc: Tuning result with accepted true only when the loop may terminate.
+        doc: Tuning result with a literal boolean stop field that is true only when the loop may terminate; semantic acceptance remains separate.
         acceptance:
-          - The result preserves unknowns and exposes whether another iteration is justified.
+          - The result preserves unknowns and exposes whether another iteration is justified without treating stop as acceptance.

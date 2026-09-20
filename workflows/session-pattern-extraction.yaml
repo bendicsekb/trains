@@ -51,7 +51,7 @@ steps:
     repeat:
       inputs:
         previous: {ref: result}
-      until: {ref: result.accepted}
+      until: {ref: result.stop}
     outputs:
       candidate:
         ref: adjust.candidate

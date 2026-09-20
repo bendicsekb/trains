@@ -20,7 +20,7 @@ An input or output is either documented inline with `doc` or linked with `ref`. 
 
 A step must perform a meaningful transformation, verification, classification, or decision. Do not add a bookkeeping-only step to persist an existing result: when durability matters, require the producing output itself to be a concrete durable reference.
 
-Repetition is control flow, not a step. A loop applies to one car; if several cars repeat together, put them in a nested train and repeat the invoking car. `repeat.inputs` explicitly feeds outputs into the next invocation, while `repeat.until` references the acceptance result that exits the loop.
+Repetition is control flow, not a step. A loop applies to one car; if several cars repeat together, put them in a nested train and repeat the invoking car. `repeat.inputs` explicitly feeds outputs into the next invocation, while `repeat.until` references a literal-boolean protocol stop predicate; semantic acceptance is verified separately.
 
 ### Handoff
 

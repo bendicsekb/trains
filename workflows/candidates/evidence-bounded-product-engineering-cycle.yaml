@@ -53,6 +53,6 @@ steps:
       - Make the smallest evidence-backed change, route, or conclusion.
     outputs:
       result:
-        doc: Concrete result or reference supported by the available evidence.
+        doc: Concrete result or reference supported by the available evidence, with a literal boolean stop field for loop control when this car is repeated.
         acceptance:
-          - The result is accepted only when the scoped claim is supported or an explicit stop condition is reached.
+          - The result preserves the scoped claim's evidence and uncertainty; its stop field controls iteration only and is not semantic acceptance.

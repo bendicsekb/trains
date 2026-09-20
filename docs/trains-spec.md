@@ -1,6 +1,6 @@
 # Trains specification
 
-Status: sufficient for the first runner implementation; intentionally minimal.
+Status: structural execution contract; semantic acceptance requires independent verification.
 
 This is the canonical contract. The generic runner rejects the earlier
 top-level repeat form; the repository's canonical workflows now use the
@@ -94,6 +94,10 @@ revision:
 
 A referenced nested output inherits its output contract unless the parent narrows it further.
 
+`acceptance` describes a semantic claim for independent verification; it is not
+an executable expression in the generic runner. Output presence proves only a
+structural handoff, not correctness.
+
 ## Procedures and composition
 
 A procedure is either instructions trusted to the executing agent:
@@ -112,6 +116,11 @@ procedure:
 
 Invoking a train pushes it onto the execution call stack. Its declared inputs are supplied to the child; its final outputs return to the calling car.
 
+Nested calls bind declared child inputs and expose only child final outputs.
+Parent cars cannot reference child internals. Paths resolve relative to the
+declaring train; invalid references or incompatible boundaries fail before the
+dependent car runs.
+
 ## Repetition
 
 Repetition is a property of one car, not a standalone car and not an arbitrary range of sibling cars. When several cars must repeat together, place them in a nested train and repeat the car that invokes it.
@@ -125,19 +134,23 @@ improve:
   repeat:
     inputs:
       previous: {ref: result}
-    until: {ref: result.accepted}
+    until: {ref: result.stop}
   outputs:
     result: {ref: resolve.result}
 ```
 
+Here `result.stop` is a literal boolean for loop control, not semantic acceptance.
+
 Loop semantics:
 
 1. The first invocation receives the car's ordinary inputs.
-2. After each invocation, the runner evaluates `repeat.until`.
-3. If it is not satisfied, `repeat.inputs` are resolved from that invocation's outputs and added to the next invocation.
-4. Repeat inputs may not silently overwrite ordinary inputs.
-5. Only the final accepted outputs return to the parent train; intermediate outputs remain in execution history.
-6. Operational iteration limits, retries, timeouts, and failure recovery belong to the runner, not the train definition.
+2. `repeat.until` is the sole executable exit predicate: literal `true` stops,
+   literal `false` repeats, and missing or non-boolean values block the run.
+3. On `false`, resolve `repeat.inputs` from that invocation's outputs; they may
+   not overwrite ordinary inputs.
+4. Only the stopping invocation's outputs return to the parent; intermediate
+   outputs remain in execution history.
+5. Iteration limits, retries, timeouts, and recovery belong to the runner.
 
 This explicit feedback edge replaces implicit mutable state.
 
@@ -150,11 +163,27 @@ For each car invocation, Pi starts a clean context seeded with:
 - the relevant outputs referenced by those inputs;
 - no undeclared sibling context or private reasoning.
 
-Pi executes the car, validates its structured handoff against the declared
-output boundary, and hands the outputs to dependent cars. Semantic acceptance
-prose remains a verification contract unless a deterministic verifier or human
-review supplies independent evidence. A nested train receives its own call
-frame and clean car contexts.
+Pi validates the structured handoff and passes outputs to dependent cars. A
+valid handoff or stopped loop is structural only. Semantic acceptance requires
+independent verification; until then the terminal protocol state is
+`ready_for_verification`.
+
+## Exit criteria
+
+Every train has two exit layers:
+
+1. **Protocol exit** — a literal boolean reference such as `result.stop` that
+   lets the runner advance or stop a repeat.
+2. **Outcome acceptance** — an evidence-backed claim checked independently at
+   the same boundary as the claim.
+
+An acceptance criterion names the observable claim, boundary or environment,
+evidence, and remaining uncertainty. “Build passes”, “session completed”, or
+“data was written” are not sufficient by themselves.
+
+Verification may classify the outcome as `accepted`, `partial`, `blocked`,
+`failed`, or `unknown`; `unknown` is not success and is not inferred from the
+loop predicate.
 
 The Pi Trains extension owns scheduling, fresh-session creation, bounded
 repetition, steering, persistence, and lifecycle transitions. It stores those
@@ -181,6 +210,9 @@ The process evolves from actual collaboration. Retrospectives and RCAs are evide
 - Do not create bookkeeping-only cars. Durability belongs in concrete outputs.
 - Dependencies come from references rather than separate ordering declarations.
 - Acceptance belongs to the output it validates.
+- Protocol exit and semantic acceptance are separate; stopping a loop is never
+  proof of success.
+- Missing evidence remains visible as uncertainty.
 - Do not hide cross-iteration data in generic state.
 - Do not put Pi flags, paths, retries, provenance, evidence counts, lifecycle status, or backtest bookkeeping in train YAML.
 
