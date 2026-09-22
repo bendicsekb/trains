@@ -187,9 +187,10 @@ loop predicate.
 
 The Pi Trains extension owns scheduling, fresh-session creation, bounded
 repetition, steering, persistence, and lifecycle transitions. It stores those
-runtime details in Pi custom session entries rather than train YAML. A legacy
-subprocess runner may provide a batch compatibility path, but it is not part
-of the train contract.
+runtime details in Pi custom session entries rather than train YAML. The native
+Pi extension and the shared train-definition parser are the supported runtime
+implementation. Specialized batch workflows may use their own supervisor and
+handoff protocols, but those are outside the generic Trains runtime contract.
 
 ## Learning loop
 

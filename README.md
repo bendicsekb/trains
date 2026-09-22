@@ -81,7 +81,7 @@ The goal is to externalise recurring human engineering workflows so agents can e
 
 The human should increasingly provide intent and guidance at the highest useful level, while trains encode how recurring work is carried out and handed from one stage to the next.
 
-## Generic Pi runner
+## Supported Pi runtime
 
 The primary runtime is now the Pi-native extension in
 [`extensions/train-runner.js`](extensions/train-runner.js). Install this repo as
@@ -122,55 +122,15 @@ worker-facing prose unless a deterministic verifier or human review supplies
 semantic evidence; terminal runs therefore retain a verification boundary
 instead of treating an agent assertion as independent proof.
 
-The subprocess runner below remains as a compatibility and regression harness
-for the earlier batch workflow. It is not the Pi-native execution path.
+The supported runtime is the native Pi extension plus the shared YAML parser:
 
-`src/trains-runner.mjs` is the first generic execution engine for the contract
-above. It compiles references into a dependency graph, runs each car in a fresh
-Pi `--no-session` RPC process, validates a structured handoff, supports nested
-train call frames, evaluates one-car `repeat` loops, and persists a resumable
-state snapshot plus append-only events outside the train YAML.
-
-Run it with:
-
-```bash
-npm install
-node scripts/run-train.mjs \
-  --train workflows/your-train.yaml \
-  --input-json inputs.json \
-  --pi-cli /path/to/pi-cli.js \
-  --worker-command /path/to/node \
-  --provider openai-codex \
-  --model gpt-5.6-luna \
-  --thinking xhigh
-```
-
-The run directory contains `state.json`, `events.ndjson`, one supervised Pi
-run per car invocation, and nested call-frame state. A clean Pi exit is still
-only `needs_verification`; the runner advances a car only after independently
-validating its handoff envelope. Prose acceptance checks remain worker-facing
-contracts, so semantic acceptance must be independently verified by the caller.
-
-The required handoff shape is:
-
-```json
-{
-  "schemaVersion": 1,
-  "runId": "...",
-  "trainId": "...",
-  "step": "...",
-  "invocationId": "...",
-  "status": "ready_for_verification",
-  "outputs": {"result": {"accepted": true}},
-  "evidenceRefs": [],
-  "claimsNotMade": []
-}
-```
-
-The runner intentionally does not add `state`, model settings, retries, paths,
-or tool policy to train YAML. The native extension uses Pi's session and
-extension APIs for interactive execution; the compatibility runner uses the
-existing Pi Product Factory supervisor for batch execution.
+- `extensions/train-runner.js` owns scheduling, fresh-session execution,
+  handoffs, persistence, repeats, nested call frames, and lifecycle commands.
+- `src/train-definition.mjs` owns YAML parsing, reference validation, nested
+  train loading, and train-interface discovery.
+- Specialized session-extraction scripts may use the Pi Product Factory
+  supervisor directly for their own bounded RPC stages; that is pipeline
+  infrastructure, not a second generic Trains runner.
 
 ## Initial schema direction
 
