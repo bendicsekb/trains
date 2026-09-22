@@ -192,6 +192,18 @@ Pi extension and the shared train-definition parser are the supported runtime
 implementation. Specialized batch workflows may use their own supervisor and
 handoff protocols, but those are outside the generic Trains runtime contract.
 
+## Human steps
+
+A human step is a blocking dependency inside a running train or workflow. The
+run remains blocked until the required human result arrives, then resumes from
+that result and the persisted workflow state.
+
+Humans are treated like slow, imperfect external APIs: they may respond
+partially, return arbitrary artifacts, or require several interactions before
+the dependency is satisfied. The current contract defines the behavior but not
+yet a canonical YAML syntax or a universal rule for what is sufficient to
+resume.
+
 ## Learning loop
 
 1. Begin with the leanest process that can plausibly work.

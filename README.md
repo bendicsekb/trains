@@ -28,6 +28,14 @@ A **handoff** is the explicit output of a train that another train can consume.
 
 The existence of a clear handoff matters more than choosing one universal handoff format up front.
 
+By default, crossing a handoff implies a fresh model context; inherited conversational history must be explicit rather than implicit. Handoffs are intentional compaction points: they carry decision-relevant state forward while discarding incidental exploration and failed paths.
+
+### Human step
+
+A **human step** is a blocking step inside a running train or workflow. The run remains blocked until the required human result arrives, then continues from that result and the persisted workflow state.
+
+Humans should be treated like a slow, imperfect external API: they may take a long time, respond partially, return arbitrary artifacts, or require several interactions before the dependency is satisfied.
+
 ### Workflow
 
 A **workflow** is a train composed of other trains.
@@ -81,8 +89,9 @@ The goal is to externalise recurring human engineering workflows so agents can e
 
 The human should increasingly provide intent and guidance at the highest useful level, while trains encode how recurring work is carried out and handed from one stage to the next.
 
-## Supported Pi runtime
+The goal is not to remove humans from every process, but to put them at the points where their judgment has leverage. A human step should feel like waiting on an API or rate limit: autonomous work continues up to that dependency, the workflow blocks, and then resumes from the human's returned result.
 
+## Supported Pi runtime
 The primary runtime is now the Pi-native extension in
 [`extensions/train-runner.js`](extensions/train-runner.js). Install this repo as
 a Pi package or load the extension directly:
@@ -145,3 +154,9 @@ The first workflow establishes a deliberately small schema vocabulary:
 Pi execution details and run evidence live beside the workflow in runners, contracts, reports, and registry records. New train fields should be added only when executable meaning cannot be represented with this core.
 
 Remaining design questions are now downstream of this first workflow: which artifact types deserve standard formats, how different execution engines should expose replay, and which metrics generalise across train families.
+
+Human steps also need a future contract for what counts as enough evidence or output to resume.
+
+## References
+
+The context-boundary and intentional-compaction framing is informed by Dex Horthy's discussion of trajectory poisoning and intentional compaction with Gergely Orosz on [The Pragmatic Engineer](https://newsletter.pragmaticengineer.com/p/context-engineering-with-dex-horthy).
