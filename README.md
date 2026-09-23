@@ -115,13 +115,6 @@ Inside Pi, start a train with:
 /train-cancel
 ```
 
-For a prompt-by-prompt workflow demonstration with Git checkpoints, load
-`extensions/teaching-session.js` alongside the runner and use `/teach-start`.
-The teaching-session commands, publication boundary, explained rollback,
-recovery journal, and private evidence rules are documented in
-[docs/teaching-sessions.md](docs/teaching-sessions.md). Teaching sessions and
-executable trains are mutually exclusive within one Pi conversation.
-
 The extension is the state machine: it loads the lean YAML, schedules runnable
 cars, creates a fresh Pi session with `newSession()` for every invocation,
 passes only declared inputs, and advances only after the car calls the

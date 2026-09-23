@@ -223,27 +223,3 @@ test("extension registers Pi-native commands and the terminating handoff tool", 
   assert.match(tools.get("train_handoff").promptGuidelines[0], /top-level summary/);
   for (const name of ["train", "train-status", "train-advance", "train-steer", "train-pause", "train-resume", "train-cancel"]) assert.ok(commands.has(name), name);
 });
-
-test("train start refuses a teaching session in the same Pi conversation", async () => {
-  const directory = tempDir();
-  const trainPath = writeTrain(directory, "blocked.yaml", `
-id: blocked
-steps:
-  first:
-    inputs:
-      request: {doc: Work request.}
-    procedure:
-      - Produce a result.
-    outputs:
-      result: {doc: Result.}
-`);
-  const fake = fakePiContext(directory);
-  fake.root.sessionManager.getEntries().push({
-    type: "custom",
-    customType: "teaching.session.v1",
-    data: { status: "active", id: "teaching-1" },
-  });
-  const machine = new TrainMachine({ pi: { appendEntry() {}, sendUserMessage() {} } });
-  machine.attachContext(fake.root);
-  assert.throws(() => machine.start(trainPath, { request: "ship it" }), /teaching session is active/);
-});
