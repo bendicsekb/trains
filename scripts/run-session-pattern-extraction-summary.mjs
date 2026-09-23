@@ -100,7 +100,7 @@ export async function runExecutiveSummary({
   const excludedAnalystOutputs = new Set([summaryJsonPath, summaryMarkdownPath, analystContractPath, handoffPath]);
   const sourceOfTruth = [
     masterPath,
-    path.join(projectDir, "workflows/session-pattern-extraction.yaml"),
+    path.join(projectDir, "trains/session-pattern-extraction/session-pattern-extraction.yaml"),
     path.join(projectDir, "docs/session-pattern-extraction.md"),
     chainManifestPath,
     chainResultPath,

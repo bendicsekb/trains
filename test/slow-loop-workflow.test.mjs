@@ -8,7 +8,7 @@ import { loadTrain } from "../src/train-definition.mjs";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 test("slow-loop workflow preserves the book-to-change handoff chain", () => {
-  const train = loadTrain(path.join(repoRoot, "workflows/slow-loop.yaml"));
+  const train = loadTrain(path.join(repoRoot, "trains/slow-loops/slow-loop.yaml"));
 
   assert.deepEqual(train.interfaceInputs, ["book"]);
   assert.deepEqual(Object.keys(train.definition.steps), [

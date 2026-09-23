@@ -67,7 +67,9 @@ It has six stages:
 5. **Compare and adjust** — classify misses, make the smallest justified change, and record the reason and expected effect.
 6. **Loop** — return to backtest after every adjustment until the convergence gate passes; then run the frozen candidate once on the holdout set.
 
-The canonical first workflow is [workflows/session-pattern-extraction.yaml](workflows/session-pattern-extraction.yaml). Its operating contract is [docs/session-pattern-extraction.md](docs/session-pattern-extraction.md). The deterministic corpus preflight is [scripts/build-session-corpus-index.mjs](scripts/build-session-corpus-index.mjs), followed by the bounded interest scan in [scripts/build-session-interest-index.mjs](scripts/build-session-interest-index.mjs). The Pi chain runner is [scripts/run-session-pattern-extraction-chain.mjs](scripts/run-session-pattern-extraction-chain.mjs).
+The canonical first workflow is [trains/session-pattern-extraction/session-pattern-extraction.yaml](trains/session-pattern-extraction/session-pattern-extraction.yaml). Its operating contract is [docs/session-pattern-extraction.md](docs/session-pattern-extraction.md). The deterministic corpus preflight is [scripts/build-session-corpus-index.mjs](scripts/build-session-corpus-index.mjs), followed by the bounded interest scan in [scripts/build-session-interest-index.mjs](scripts/build-session-interest-index.mjs). The Pi chain runner is [scripts/run-session-pattern-extraction-chain.mjs](scripts/run-session-pattern-extraction-chain.mjs).
+
+The separate process-improvement workflow is [trains/agent-process-observability/agent-process-observability.yaml](trains/agent-process-observability/agent-process-observability.yaml), with its [founding note](trains/agent-process-observability/founding-note.md). It reconstructs observed execution, measures friction, diagnoses causes, and designs bounded interventions; it does not replace session pattern extraction.
 
 When executed by Pi, every stage is a new `--no-session` RPC process. The stage's JSON handoff is the only context transferred to the next stage; the chain runner routes stages 4–6 back to backtest with a new context until the convergence handoff is terminal. After the chain terminates, it spawns one more fresh Pi context as a post-run analyst. That analyst reads only the completed chain's logs, handoffs, and artifacts, then writes an executive report covering topic, statistics, extracted workflow, new-versus-matched patterns, and convergence. A clean worker exit still means `needs_verification`, and the chain verifier must inspect the handoffs and artifacts independently.
 
@@ -81,7 +83,7 @@ The repaired backtest is [scripts/run-semantic-workflow-backtest.mjs](scripts/ru
 
 The workflow must preserve evidence links for every extracted rule. A pattern is not promoted merely because it appears often: the candidate must also make the observed outcome easier to reproduce, avoid material regressions against the baseline, and expose uncertainty instead of silently generalising an exception.
 
-The book-guided slow loop is [workflows/slow-loop.yaml](workflows/slow-loop.yaml). It takes one engineering book or body of knowledge as input, inspects the target codebase for evidence-backed rule candidates, matches them to the book, defines tests, and implements only the justified changes. An empty candidate set or no-change result is valid when the inspection does not support an improvement.
+The book-guided slow loop is [trains/slow-loops/slow-loop.yaml](trains/slow-loops/slow-loop.yaml). It takes one engineering book or body of knowledge as input, inspects the target codebase for evidence-backed rule candidates, matches them to the book, defines tests, and implements only the justified changes. An empty candidate set or no-change result is valid when the inspection does not support an improvement.
 
 ## Goal
 
@@ -105,7 +107,7 @@ pi -e /home/bendi/trains/extensions/train-runner.js
 Inside Pi, start a train with:
 
 ```text
-/train workflows/your-train.yaml {"request":"..."}
+/train trains/your-train.yaml {"request":"..."}
 /train-status
 /train-steer Please re-check the evidence boundary.
 /train-pause

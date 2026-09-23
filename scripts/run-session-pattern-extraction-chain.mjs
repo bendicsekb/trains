@@ -148,7 +148,7 @@ if (!contractPath) {
     runId: master.runId,
     step: "initial-input",
     status: "ready",
-    sourceOfTruth: [relative(masterContractPath), relative(path.join(projectDir, "workflows/session-pattern-extraction.yaml")), relative(sourceIndexPath), relative(interestIndexPath)],
+    sourceOfTruth: [relative(masterContractPath), relative(path.join(projectDir, "trains/session-pattern-extraction/session-pattern-extraction.yaml")), relative(sourceIndexPath), relative(interestIndexPath)],
     targetBehavior: "structural cross-session agent workflow behavior",
     reasoning: [],
     nextStep: "identify-sessions",
@@ -159,7 +159,7 @@ if (!contractPath) {
     const handoffPath = path.join(stepDir, "handoff.json");
     const sourceOfTruth = [
       masterContractPath,
-      path.join(projectDir, "workflows/session-pattern-extraction.yaml"),
+      path.join(projectDir, "trains/session-pattern-extraction/session-pattern-extraction.yaml"),
       path.join(projectDir, "docs/session-pattern-extraction.md"),
       sourceIndexPath,
       inputHandoffPath,
