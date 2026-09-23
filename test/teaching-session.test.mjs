@@ -160,6 +160,16 @@ async function prompt({ controller, manager, pi, text, change }) {
   return controller.state.prompts.find((candidate) => candidate.id === record.id);
 }
 
+async function realisticPrompt({ controller, manager, pi, text, change }) {
+  const record = await controller.recordPrompt(text, pi);
+  const entryId = manager.appendUser(text);
+  await change?.();
+  await controller.settle(pi);
+  const settled = controller.state.prompts.find((candidate) => candidate.id === record.id);
+  assert.equal(settled.piEntryId, entryId);
+  return settled;
+}
+
 test("start records a clean checkpoint and rejects dirty repositories", async () => {
   const files = await fixture();
   await fs.writeFile(path.join(files.worktree, "unrelated.txt"), "keep me\n");
@@ -183,6 +193,16 @@ test("read-only prompt records one boundary without an empty commit or PR", asyn
   assert.equal(run.controller.state.pullRequest, null);
   assert.equal(await git(run.worktree, "rev-parse", "HEAD"), run.base);
   assert.equal(await git(run.worktree, "ls-remote", "--heads", run.remote, `refs/heads/${run.controller.state.sessionBranch}`), "");
+});
+
+test("prompt mapping tolerates Pi persisting the user entry after before_agent_start", async () => {
+  const run = await controllerFixture();
+  const promptRecord = await realisticPrompt({
+    ...run,
+    text: "Inspect the fixture without changing it.",
+  });
+  assert.equal(promptRecord.status, "read_only");
+  assert.equal(promptRecord.parentEntryId, run.manager.entries[0].id);
 });
 
 test("each settled code prompt makes one unsigned commit and reuses one PR", async () => {

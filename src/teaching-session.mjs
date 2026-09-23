@@ -421,7 +421,6 @@ export class TeachingSessionController {
     if (!["active", "awaiting_rewrite"].includes(this.state.status)) throw new Error(`Teaching session cannot accept a prompt while ${this.state.status}`);
 
     const entry = this.findPiUserEntry(prompt, ctx);
-    if (!entry?.id) throw new Error("Unable to map the prompt to a persisted Pi session entry");
     await this.git.ensureOnBranch(this.state.sessionBranch);
     await this.git.assertClean("Teaching prompts must begin from a clean session branch");
     const preCommit = await this.git.head();
@@ -433,8 +432,11 @@ export class TeachingSessionController {
       originalPrompt: prompt,
       piSessionId: ctx.sessionManager.getSessionId?.(),
       piSessionFile: ctx.sessionManager.getSessionFile?.(),
-      piEntryId: entry.id,
-      parentEntryId: entry.parentId ?? null,
+      // Pi emits before_agent_start before it persists the user message. The
+      // entry is resolved at settle time; the current leaf is the parent
+      // boundary available at prompt start.
+      piEntryId: entry?.id ?? null,
+      parentEntryId: entry?.parentId ?? ctx.sessionManager.getLeafId?.() ?? null,
       preCommit,
       status: "running",
       rewriteOf,
@@ -468,6 +470,15 @@ export class TeachingSessionController {
   async publishPending() {
     const prompt = this.currentPrompt();
     if (!prompt) return;
+    const entry = prompt.piEntryId ? null : this.findPiUserEntry(prompt.prompt, this.ctx);
+    if (!prompt.piEntryId && !entry?.id) throw new Error("Unable to map the settled prompt to a persisted Pi session entry");
+    if (entry?.id) {
+      prompt.piEntryId = entry.id;
+      prompt.parentEntryId = entry.parentId ?? prompt.parentEntryId;
+      prompt.piSessionId = this.ctx?.sessionManager?.getSessionId?.() ?? prompt.piSessionId;
+      prompt.piSessionFile = this.ctx?.sessionManager?.getSessionFile?.() ?? prompt.piSessionFile;
+      this.persist();
+    }
     await this.git.ensureOnBranch(this.state.sessionBranch);
     const recovering = this.state.status === "blocked" && this.state.operation?.kind === "publish";
     const operation = this.state.operation?.kind === "publish"
