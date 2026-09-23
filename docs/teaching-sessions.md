@@ -2,8 +2,8 @@
 
 Teaching sessions are ordinary terminal Pi conversations with Git checkpoints
 and explained rollback. They are separate from executable Trains: a teaching
-session demonstrates a workflow for later extraction, while a train executes a
-declared workflow.
+session captures human-guided work, while a train executes a declared
+workflow.
 
 ## Start and prompt normally
 
@@ -55,9 +55,9 @@ exclusive in one Pi session.
 
 ## Lifecycle boundary and recovery
 
-The installed Pi runtime used by v0 emits `agent_end` with `willRetry`; the
-extension publishes only after the final event. It also accepts a future
-`agent_settled` event. A worker-created commit is treated as an unexpected
+The supported Pi runtime emits `agent_end` with `willRetry`; the extension
+publishes only after the final event. It also handles `agent_settled` when that
+event is emitted. A worker-created commit is treated as an unexpected
 publication boundary and blocks rather than being silently remapped.
 
 Commit, push, pull-request, backup, reset, and conversation-navigation stages

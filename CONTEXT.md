@@ -1,6 +1,6 @@
 # Trains
 
-Trains externalize recurring human workflows so agents can perform them consistently. Teaching sessions provide evidence for discovering and refining those workflows.
+Trains externalize recurring human workflows so agents can perform them consistently. Teaching sessions capture reviewable, recoverable human-guided work.
 
 ## Language
 
@@ -14,7 +14,7 @@ A prescribed unit of work or reasoning within a train.
 An explicit result that a car or train produces for another to consume.
 
 **Teaching session**:
-A problem-solving conversation in which a person directs an agent and explains their approach, providing material for later workflow extraction.
+A problem-solving conversation in which a person directs an agent and explains their approach, with Git checkpoints, reviewable changes, and explained rollback.
 
 **Attempt**:
 A preserved path through solving a problem, including its conversation, work products, and feedback, even when abandoned in favor of another path.
