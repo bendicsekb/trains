@@ -406,11 +406,17 @@ export class TeachingSessionController {
   }
 
   findPiUserEntry(prompt, ctx = this.ctx) {
+    const assignedEntryIds = new Set(
+      (this.state?.prompts ?? [])
+        .map((candidate) => candidate.piEntryId)
+        .filter(Boolean),
+    );
     const branch = ctx?.sessionManager?.getBranch?.() ?? [];
-    const exact = branch.findLast?.((entry) => promptText(entry) === prompt) ?? [...branch].reverse().find((entry) => promptText(entry) === prompt);
+    const matches = (entry) => promptText(entry) === prompt && !assignedEntryIds.has(entry.id);
+    const exact = branch.findLast?.(matches) ?? [...branch].reverse().find(matches);
     if (exact) return exact;
     const entries = ctx?.sessionManager?.getEntries?.() ?? [];
-    return [...entries].reverse().find((entry) => promptText(entry) === prompt) ?? null;
+    return [...entries].reverse().find(matches) ?? null;
   }
 
   async recordPrompt(prompt, ctx = this.ctx) {

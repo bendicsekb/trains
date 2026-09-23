@@ -205,6 +205,23 @@ test("prompt mapping tolerates Pi persisting the user entry after before_agent_s
   assert.equal(promptRecord.parentEntryId, run.manager.entries[0].id);
 });
 
+test("duplicate prompt text maps each publication to its own Pi entry", async () => {
+  const run = await controllerFixture();
+  const text = "Repeat this exact teaching prompt.";
+
+  const first = await realisticPrompt({ ...run, text });
+  const second = await realisticPrompt({
+    ...run,
+    text,
+    change: async () => fs.writeFile(path.join(run.worktree, "repeat.txt"), "second\n"),
+  });
+
+  assert.notEqual(first.piEntryId, second.piEntryId);
+  const userEntries = run.manager.entries.filter((entry) => entry.message?.role === "user");
+  assert.equal(run.controller.state.prompts[0].piEntryId, userEntries[0].id);
+  assert.equal(run.controller.state.prompts[1].piEntryId, userEntries[1].id);
+});
+
 test("each settled code prompt makes one unsigned commit and reuses one PR", async () => {
   const run = await controllerFixture();
   const first = await prompt({
