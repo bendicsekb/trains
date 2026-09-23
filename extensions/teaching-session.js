@@ -44,9 +44,8 @@ export function createTeachingExtension(options = {}) {
       await controller.settle(ctx, { willRetry: Boolean(event?.willRetry) });
     };
 
-    // Current Pi exposes agent_end with a willRetry boundary. Newer runtimes
-    // may also expose agent_settled; the controller makes the second signal
-    // harmless when agent_end has already published the prompt.
+    // Pi can report final settlement through either hook. Duplicate signals
+    // are harmless after the prompt has been published.
     pi.on("agent_end", settle);
     pi.on("agent_settled", settle);
 
