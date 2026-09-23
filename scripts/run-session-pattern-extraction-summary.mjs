@@ -100,8 +100,8 @@ export async function runExecutiveSummary({
   const excludedAnalystOutputs = new Set([summaryJsonPath, summaryMarkdownPath, analystContractPath, handoffPath]);
   const sourceOfTruth = [
     masterPath,
-    path.join(projectDir, "trains/session-pattern-extraction/session-pattern-extraction.yaml"),
-    path.join(projectDir, "docs/session-pattern-extraction.md"),
+    path.join(projectDir, "trains/discover-candidate-trains/discover-candidate-trains.yaml"),
+    path.join(projectDir, "docs/discover-candidate-trains.md"),
     chainManifestPath,
     chainResultPath,
     chainEventsPath,
@@ -117,7 +117,7 @@ export async function runExecutiveSummary({
     package: master.package,
     createdAt: new Date().toISOString(),
     goal: [
-      "You are the independent post-run analysis subagent for a completed session-pattern-extraction train.",
+      "You are the independent post-run analysis subagent for a completed discover-candidate-trains train.",
       "This is a fresh Pi context. Inspect only the declared logs, handoffs, run artifacts, workflow definition, and chain result.",
       "Do not read raw historical session files, other Pi sessions, hidden agent state, or undeclared files.",
       "Produce an executive summary that a founder can understand without opening the ledgers.",
@@ -171,7 +171,7 @@ export async function runExecutiveSummary({
       "Escalate if provider authentication, model access, or factory tools are unavailable.",
     ],
     metadata: {
-      workflowMode: "session-pattern-extraction-post-run-analysis",
+      workflowMode: "discover-candidate-trains-post-run-analysis",
       freshContext: true,
       handoffOnlyContextTransfer: true,
       inputBoundary: "completed train logs, handoffs, and artifacts only",

@@ -54,9 +54,9 @@ Trains are created progressively rather than by specifying every process in adva
 
 This is the main mechanism for **forcing a workflow**: recurring implicit reasoning is gradually converted into explicit, reusable process.
 
-## First workflow: extract patterns from Codex sessions
+## Discover candidate trains from Codex sessions
 
-The first workflow turns a set of previous Codex sessions into a candidate train, then tests and refines that train against sessions it did not learn from.
+This train turns a set of previous Codex sessions into a candidate train, then tests and refines that train against sessions it did not learn from.
 
 It has six stages:
 
@@ -67,9 +67,9 @@ It has six stages:
 5. **Compare and adjust** — classify misses, make the smallest justified change, and record the reason and expected effect.
 6. **Loop** — return to backtest after every adjustment until the convergence gate passes; then run the frozen candidate once on the holdout set.
 
-The canonical first workflow is [trains/session-pattern-extraction/session-pattern-extraction.yaml](trains/session-pattern-extraction/session-pattern-extraction.yaml). Its operating contract is [docs/session-pattern-extraction.md](docs/session-pattern-extraction.md). The deterministic corpus preflight is [scripts/build-session-corpus-index.mjs](scripts/build-session-corpus-index.mjs), followed by the bounded interest scan in [scripts/build-session-interest-index.mjs](scripts/build-session-interest-index.mjs). The Pi chain runner is [scripts/run-session-pattern-extraction-chain.mjs](scripts/run-session-pattern-extraction-chain.mjs).
+The candidate-discovery train is [trains/discover-candidate-trains/discover-candidate-trains.yaml](trains/discover-candidate-trains/discover-candidate-trains.yaml). Its operating contract is [docs/discover-candidate-trains.md](docs/discover-candidate-trains.md). The deterministic corpus preflight is [scripts/build-session-corpus-index.mjs](scripts/build-session-corpus-index.mjs), followed by the bounded interest scan in [scripts/build-session-interest-index.mjs](scripts/build-session-interest-index.mjs). The Pi chain runner is [scripts/run-session-pattern-extraction-chain.mjs](scripts/run-session-pattern-extraction-chain.mjs).
 
-The separate process-improvement workflow is [trains/agent-process-observability/agent-process-observability.yaml](trains/agent-process-observability/agent-process-observability.yaml), with its [founding note](trains/agent-process-observability/founding-note.md). It reconstructs observed execution, measures friction, diagnoses causes, and designs bounded interventions; it does not replace session pattern extraction.
+The train-improvement workflow is [trains/improve-train/improve-train.yaml](trains/improve-train/improve-train.yaml), with its [founding note](trains/improve-train/founding-note.md). It reconstructs observed execution, measures friction, diagnoses causes, and designs bounded interventions; it does not replace candidate discovery.
 
 When executed by Pi, every stage is a new `--no-session` RPC process. The stage's JSON handoff is the only context transferred to the next stage; the chain runner routes stages 4–6 back to backtest with a new context until the convergence handoff is terminal. After the chain terminates, it spawns one more fresh Pi context as a post-run analyst. That analyst reads only the completed chain's logs, handoffs, and artifacts, then writes an executive report covering topic, statistics, extracted workflow, new-versus-matched patterns, and convergence. A clean worker exit still means `needs_verification`, and the chain verifier must inspect the handoffs and artifacts independently.
 

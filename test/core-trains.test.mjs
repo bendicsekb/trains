@@ -8,14 +8,14 @@ import { loadTrain } from "../src/train-definition.mjs";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 test("core trains are stored under trains and parse with their declared interfaces", () => {
-  const sessionPatterns = loadTrain(path.join(repoRoot, "trains/session-pattern-extraction/session-pattern-extraction.yaml"));
-  const processObservability = loadTrain(path.join(repoRoot, "trains/agent-process-observability/agent-process-observability.yaml"));
+  const candidateDiscovery = loadTrain(path.join(repoRoot, "trains/discover-candidate-trains/discover-candidate-trains.yaml"));
+  const trainImprovement = loadTrain(path.join(repoRoot, "trains/improve-train/improve-train.yaml"));
 
-  assert.equal(sessionPatterns.definition.id, "session-pattern-extraction");
-  assert.deepEqual(sessionPatterns.interfaceInputs, ["sessions", "target", "constraints"]);
-  assert.ok(sessionPatterns.nested.has("iterate"));
+  assert.equal(candidateDiscovery.definition.id, "discover-candidate-trains");
+  assert.deepEqual(candidateDiscovery.interfaceInputs, ["sessions", "target", "constraints"]);
+  assert.ok(candidateDiscovery.nested.has("iterate"));
 
-  assert.equal(processObservability.definition.id, "agent-process-observability");
-  assert.deepEqual(processObservability.interfaceInputs, ["sessions", "target", "constraints"]);
-  assert.deepEqual(processObservability.finalOutputs, [{ stepId: "evaluate", outputId: "evaluation" }]);
+  assert.equal(trainImprovement.definition.id, "improve-train");
+  assert.deepEqual(trainImprovement.interfaceInputs, ["sessions", "target", "constraints"]);
+  assert.deepEqual(trainImprovement.finalOutputs, [{ stepId: "evaluate", outputId: "evaluation" }]);
 });

@@ -148,7 +148,7 @@ if (!contractPath) {
     runId: master.runId,
     step: "initial-input",
     status: "ready",
-    sourceOfTruth: [relative(masterContractPath), relative(path.join(projectDir, "trains/session-pattern-extraction/session-pattern-extraction.yaml")), relative(sourceIndexPath), relative(interestIndexPath)],
+    sourceOfTruth: [relative(masterContractPath), relative(path.join(projectDir, "trains/discover-candidate-trains/discover-candidate-trains.yaml")), relative(sourceIndexPath), relative(interestIndexPath)],
     targetBehavior: "structural cross-session agent workflow behavior",
     reasoning: [],
     nextStep: "identify-sessions",
@@ -159,8 +159,8 @@ if (!contractPath) {
     const handoffPath = path.join(stepDir, "handoff.json");
     const sourceOfTruth = [
       masterContractPath,
-      path.join(projectDir, "trains/session-pattern-extraction/session-pattern-extraction.yaml"),
-      path.join(projectDir, "docs/session-pattern-extraction.md"),
+      path.join(projectDir, "trains/discover-candidate-trains/discover-candidate-trains.yaml"),
+      path.join(projectDir, "docs/discover-candidate-trains.md"),
       sourceIndexPath,
       inputHandoffPath,
       ...priorArtifacts,
@@ -175,7 +175,7 @@ if (!contractPath) {
       package: master.package,
       createdAt: new Date().toISOString(),
       goal: [
-        `You are stage ${stage.number} of ${stages.length} in the session-pattern-extraction chain: ${stage.title}.`,
+        `You are stage ${stage.number} of ${stages.length} in the discover-candidate-trains chain: ${stage.title}.`,
         "This is a fresh Pi context. Read only the declared input handoff and the declared source-of-truth files for this stage.",
         "Do not read prior Pi events, another step's contract, another step's handoff, or any raw historical session file.",
         stage.action,
@@ -224,7 +224,7 @@ if (!contractPath) {
         "Escalate if the requested stage would require a product decision or a scope change.",
       ],
       metadata: {
-        workflowMode: "session-pattern-extraction-step",
+      workflowMode: "discover-candidate-trains-step",
         freshContext: true,
         stage: stage.id,
         iteration,

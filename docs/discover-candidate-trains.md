@@ -1,6 +1,6 @@
-# Session-pattern extraction operating contract
+# Discover candidate trains operating contract
 
-This document explains how to execute `session-pattern-extraction.yaml`. It is intentionally more precise than the generic train definition because historical-session mining is especially vulnerable to hindsight bias and overfitting.
+This document explains how to execute `discover-candidate-trains.yaml`. It is intentionally more precise than the generic train definition because historical-session mining is especially vulnerable to hindsight bias and overfitting.
 
 ## Corpus preflight
 

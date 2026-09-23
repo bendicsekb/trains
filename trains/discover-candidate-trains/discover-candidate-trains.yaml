@@ -1,4 +1,4 @@
-id: session-pattern-extraction
+id: discover-candidate-trains
 
 steps:
   identify:
@@ -47,7 +47,7 @@ steps:
       tuning: {ref: identify.inventory.tuning}
       patterns: {ref: extract.patterns}
     procedure:
-      ref: ./session-pattern-extraction-iteration.yaml
+      ref: ./discover-candidate-trains-iteration.yaml
     repeat:
       inputs:
         previous: {ref: result}
