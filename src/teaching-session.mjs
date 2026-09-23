@@ -469,6 +469,7 @@ export class TeachingSessionController {
     const prompt = this.currentPrompt();
     if (!prompt) return;
     await this.git.ensureOnBranch(this.state.sessionBranch);
+    const recovering = this.state.status === "blocked" && this.state.operation?.kind === "publish";
     const operation = this.state.operation?.kind === "publish"
       ? this.state.operation
       : { kind: "publish", promptId: prompt.id, stage: "commit", preCommit: prompt.preCommit };
@@ -479,7 +480,7 @@ export class TeachingSessionController {
     let head = await this.git.head();
     if (operation.stage === "commit") {
       if (head !== prompt.preCommit) {
-        if (await this.git.isDirectChild(prompt.preCommit, head) && (await this.git.status()) === "") {
+        if (recovering && await this.git.isDirectChild(prompt.preCommit, head) && (await this.git.status()) === "") {
           await this.git.assertUnsigned(head);
           operation.commit = head;
         } else {
@@ -596,7 +597,12 @@ export class TeachingSessionController {
     };
     this.state.status = "rolling_back";
     this.persist();
-    await this.resumeRollback();
+    try {
+      await this.resumeRollback();
+    } catch (error) {
+      this.failOperation(error);
+      throw error;
+    }
     return clone(this.state);
   }
 
@@ -619,7 +625,7 @@ export class TeachingSessionController {
     this.persist();
 
     if (operation.stage === "recorded") {
-      const backupBranch = record.backupBranch ?? `teach/${safeBranchPart(this.state.id)}/abandoned-${record.promptSequence}-${shortHash(abandonedTip)}`;
+      const backupBranch = record.backupBranch ?? `teach/backup-${safeBranchPart(this.state.id)}-${record.promptSequence}-${shortHash(abandonedTip)}`;
       record.backupBranch = backupBranch;
       await this.git.createBranch(backupBranch, abandonedTip);
       await this.git.pushBranch(backupBranch, { forceWithLease: undefined });
