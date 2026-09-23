@@ -1,6 +1,5 @@
 import {
   TeachingSessionController,
-  hasActiveTeachingSession,
 } from "../src/teaching-session.mjs";
 
 function completedPromptOptions(controller) {

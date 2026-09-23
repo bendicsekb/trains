@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { bindingKind, isObject, loadTrain, outputBindingKind, refParts } from "../src/train-definition.mjs";
+import { hasActiveTeachingSession } from "../src/teaching-session.mjs";
 
 const STATE_ENTRY = "trains.state.v1";
 const HANDOFF_TOOL = "train_handoff";
@@ -196,6 +197,9 @@ export class TrainMachine {
   start(trainPath, inputs = {}) {
     if (this.state && ["running", "starting", "paused", "blocked"].includes(this.state.status)) {
       throw new Error(`A train is already active: ${this.state.trainId} (${this.state.status})`);
+    }
+    if (hasActiveTeachingSession(this.ctx)) {
+      throw new Error("Cannot start a train while a teaching session is active in this Pi session");
     }
     const train = this.load(path.resolve(this.ctx.cwd, trainPath));
     for (const name of train.interfaceInputs) if (!Object.prototype.hasOwnProperty.call(inputs, name)) throw new Error(`Missing train input: ${name}`);

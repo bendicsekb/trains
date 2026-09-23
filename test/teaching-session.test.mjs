@@ -11,6 +11,7 @@ import {
   TeachingSessionController,
   createProcessRunner,
 } from "../src/teaching-session.mjs";
+import { createTeachingExtension } from "../extensions/teaching-session.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -314,4 +315,86 @@ test("remote conflict after backup preservation stops rollback with recoverable 
   assert.equal(rollback.backupRemoteSha, promptRecord.commit);
   assert.equal(await git(run.worktree, "rev-parse", "HEAD"), promptRecord.commit);
   assert.equal(await git(run.worktree, "ls-remote", "--heads", run.remote, `refs/heads/${rollback.backupBranch}`), `${promptRecord.commit}\trefs/heads/${rollback.backupBranch}`);
+});
+
+test("session metadata and rollback explanations survive controller restart", async () => {
+  const run = await controllerFixture();
+  const promptRecord = await prompt({
+    ...run,
+    text: "Add a change that will be reconsidered.",
+    change: async () => fs.writeFile(path.join(run.worktree, "change.txt"), "change\n"),
+  });
+  await run.controller.rollback("1", "The change was too broad; preserve the earlier boundary.", run.pi);
+
+  const replacement = new TeachingSessionController({
+    gitFactory: () => new GitRepository({ cwd: run.worktree, run: createProcessRunner() }),
+    githubFactory: () => run.github,
+    id: () => "replacement-id",
+  });
+  assert.equal(await replacement.restore(run.pi), true);
+  assert.equal(replacement.state.id, run.controller.state.id);
+  assert.equal(replacement.state.status, "awaiting_rewrite");
+  assert.equal(replacement.state.rollbacks[0].explanation, "The change was too broad; preserve the earlier boundary.");
+  assert.equal(replacement.state.rollbacks[0].abandonedTip, promptRecord.commit);
+});
+
+test("a failed push is resumable without another commit or duplicate PR", async () => {
+  const files = await fixture();
+  const manager = new FakeSessionManager();
+  const pi = context(manager, files.worktree);
+  const github = new FakeGitHub();
+  const processRun = createProcessRunner();
+  let failPush = true;
+  const run = async (commandName, args, options) => {
+    if (commandName === "git" && args[0] === "push" && failPush) {
+      failPush = false;
+      return { code: 1, stdout: "", stderr: "simulated push outage" };
+    }
+    return processRun(commandName, args, options);
+  };
+  const repo = new GitRepository({ cwd: files.worktree, run });
+  const controller = new TeachingSessionController({
+    gitFactory: () => repo,
+    githubFactory: () => github,
+    id: () => "push-recovery",
+  });
+  await controller.start(pi);
+  const record = await prompt({
+    controller,
+    manager,
+    pi,
+    text: "Publish this change despite one transient outage.",
+    change: async () => fs.writeFile(path.join(files.worktree, "recovery.txt"), "recovery\n"),
+  });
+  assert.equal(controller.state.status, "blocked");
+  assert.equal(controller.state.operation.stage, "push");
+  assert.equal(record.commit !== undefined, true);
+  const replacement = new TeachingSessionController({
+    gitFactory: () => repo,
+    githubFactory: () => github,
+    id: () => "unused",
+  });
+  await replacement.restore(pi);
+  await replacement.resume();
+  assert.equal(replacement.state.status, "active");
+  assert.equal(replacement.state.prompts[0].status, "published");
+  assert.equal(github.calls.length, 1);
+  assert.equal(await git(files.worktree, "rev-parse", "HEAD"), record.commit);
+});
+
+test("extension exposes the teaching commands and lifecycle guards", () => {
+  const commands = new Map();
+  const hooks = new Map();
+  const pi = {
+    registerCommand(name, definition) { commands.set(name, definition); },
+    registerTool() {},
+    on(name, handler) { hooks.set(name, handler); },
+  };
+  createTeachingExtension()(pi);
+  for (const name of ["teach-start", "teach-status", "teach-rollback", "teach-resume-publication", "teach-end"]) {
+    assert.ok(commands.has(name), name);
+  }
+  for (const name of ["session_start", "before_agent_start", "agent_end", "input", "session_before_tree", "session_before_fork"]) {
+    assert.ok(hooks.has(name), name);
+  }
 });
