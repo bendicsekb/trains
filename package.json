@@ -5,7 +5,8 @@
   "type": "module",
   "pi": {
     "extensions": [
-      "extensions/train-runner.js"
+      "extensions/train-runner.js",
+      "extensions/teaching-session.js"
     ]
   },
   "scripts": {
