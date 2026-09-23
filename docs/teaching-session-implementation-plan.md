@@ -1,6 +1,6 @@
 # Teaching session v0: implementation and testing plan
 
-Status: plan written before implementation. User authorized implementation and a live Pi trial; this document defines the work and its verification.
+Status: implemented and verified on branch `teach-session-v0`. Deterministic tests pass, and the live private Pi trial completed the read-only, publication, PR reuse, explained rollback, backup preservation, rewrite, and restart-recovery paths. The private trial report records exact hashes, terminal evidence, and the one trial-discovered prompt-mapping defect that was fixed before the final rewrite/recovery run.
 
 Scope: [agreed design](./teaching-session-design.md). Idea: https://github.com/bendicsekb/ideas/issues/11.
 
