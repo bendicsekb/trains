@@ -21,7 +21,7 @@ test("core trains are stored under trains and parse with their declared interfac
   assert.deepEqual(trainImprovement.finalOutputs, [{ stepId: "evaluate", outputId: "evaluation" }]);
 
   assert.equal(guidedWayfinder.definition.id, "guided-wayfinder");
-  assert.deepEqual(guidedWayfinder.interfaceInputs, ["goal", "current_system", "blockers", "constraints"]);
+  assert.deepEqual(guidedWayfinder.interfaceInputs, ["goal"]);
   assert.ok(guidedWayfinder.nested.has("wayfind"));
   assert.deepEqual(guidedWayfinder.finalOutputs, [{ stepId: "wayfind", outputId: "result" }]);
   assert.deepEqual(Object.keys(guidedWayfinder.nested.get("wayfind").definition.steps), [

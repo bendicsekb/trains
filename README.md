@@ -85,7 +85,7 @@ The workflow must preserve evidence links for every extracted rule. A pattern is
 
 The book-guided slow loop is [trains/slow-loops/slow-loop.yaml](trains/slow-loops/slow-loop.yaml). It takes one engineering book or body of knowledge as input, inspects the target codebase for evidence-backed rule candidates, matches them to the book, defines tests, and implements only the justified changes. An empty candidate set or no-change result is valid when the inspection does not support an improvement.
 
-The guided Wayfinder train is [trains/guided-wayfinder/guided-wayfinder.yaml](trains/guided-wayfinder/guided-wayfinder.yaml), with its [founding note](trains/guided-wayfinder/founding-note.md). It keeps the map and fog-of-war model, but makes the loop explicit: explore, teach, ask the human, review and re-teach until the answer is sufficient, turn the judgement into fix steps, and explore again. Pi explains the decision-relevant context before asking for human judgement; the human does not need to know the whole system or specify implementation details.
+The guided Wayfinder train is [trains/guided-wayfinder/guided-wayfinder.yaml](trains/guided-wayfinder/guided-wayfinder.yaml), with its [founding note](trains/guided-wayfinder/founding-note.md). It takes only a goal and discovers the current system, blockers, constraints, and unknowns from the working tree and references. It keeps the map and fog-of-war model, but makes the loop explicit: explore, teach, ask the human, review and re-teach until the answer is sufficient, turn the judgement into fix steps, and explore again. Pi explains the decision-relevant context before asking for human judgement; the human does not need to know the whole system or specify implementation details.
 
 ## Goal
 
@@ -110,7 +110,7 @@ Inside Pi, start a train with:
 
 ```text
 /train trains/your-train.yaml {"request":"..."}
-/train trains/guided-wayfinder/guided-wayfinder.yaml {"goal":"...","current_system":"...","blockers":"...","constraints":"..."}
+/train trains/guided-wayfinder/guided-wayfinder.yaml {"goal":"..."}
 /train-status
 /train-answer <answer>
 /train-steer Please re-check the evidence boundary.

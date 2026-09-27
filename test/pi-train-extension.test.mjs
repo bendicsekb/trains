@@ -161,6 +161,79 @@ steps:
   assert.ok(machine.state.history.some((entry) => entry.type === "human_answer"));
 });
 
+test("plain human input keeps the session-capable context for the next car", async () => {
+  const directory = tempDir();
+  const trainPath = writeTrain(directory, "plain-input.yaml", `
+id: plain-input
+steps:
+  teach:
+    inputs:
+      request: {doc: Work request.}
+    procedure:
+      - Prepare the decision context.
+    outputs:
+      briefing:
+        doc: Teaching block.
+        acceptance: [The context is explained.]
+  decide:
+    human:
+      prompt: {ref: teach.briefing}
+    outputs:
+      judgement:
+        doc: Human answer.
+        acceptance: [The answer is recorded.]
+  assess:
+    inputs:
+      judgement: {ref: decide.judgement}
+    procedure:
+      - Verify the chosen direction.
+    outputs:
+      result:
+        doc: Assessment.
+        acceptance: [The direction is assessed.]
+`);
+  const fake = fakePiContext(directory);
+  const events = new Map();
+  const commands = new Map();
+  const tools = new Map();
+  const queuedMessages = [];
+  const pi = {
+    appendEntry() {},
+    sendUserMessage(message) { queuedMessages.push(message); },
+    on(name, handler) { events.set(name, handler); },
+    registerCommand(name, definition) { commands.set(name, definition); },
+    registerTool(definition) { tools.set(definition.name, definition); },
+  };
+  createTrainExtension()(pi);
+
+  await commands.get("train").handler(`${trainPath} {"request":"choose a direction"}`, fake.root);
+  const teachingContext = fake.sessions.at(-1);
+  await tools.get("train_handoff").execute("test", {
+    outputs: { briefing: "Current context and trade-offs." },
+    summary: "Prepared the teaching block.",
+    evidenceRefs: ["test:briefing"],
+    claimsNotMade: [],
+  });
+  await events.get("agent_settled")();
+  await commands.get("train-advance").handler("", teachingContext);
+
+  assert.equal(teachingContext.newSession instanceof Function, true);
+  assert.equal(fake.sessions.length, 2, "root plus teaching session");
+
+  const restrictedInputContext = { ...teachingContext, newSession: undefined };
+  const result = await events.get("input")({ text: "Choose the reversible option." }, restrictedInputContext);
+
+  assert.deepEqual(result, { action: "handled" });
+  assert.equal(queuedMessages.at(-1), "/train-advance");
+  assert.equal(fake.sessions.length, 2, "plain input should wait for the command context to advance");
+  await commands.get("train-advance").handler("", teachingContext);
+  assert.equal(fake.sessions.length, 3, "the queued advance should start the next car session");
+  const latestState = fake.sessions.at(-1).sessionManager.getEntries().at(-1).data;
+  assert.equal(latestState.status, "running");
+  assert.equal(latestState.active.stepId, "assess");
+  assert.equal(fake.sessions.at(-1).sessionManager.getSessionId(), "session-3");
+});
+
 test("guided Wayfinder retries teaching and human judgement until the review accepts it", async () => {
   const directory = tempDir();
   const fake = fakePiContext(directory);
@@ -169,9 +242,6 @@ test("guided Wayfinder retries teaching and human judgement until the review acc
 
   await machine.start(path.join(repoRoot, "trains/guided-wayfinder/guided-wayfinder.yaml"), {
     goal: "Reach the goal",
-    current_system: "Partial system description",
-    blockers: "Unknown integration boundary",
-    constraints: "Keep changes reversible",
   });
 
   await machine.acceptHandoff({

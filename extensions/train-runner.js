@@ -180,7 +180,14 @@ export class TrainMachine {
   }
 
   attachContext(ctx) {
-    this.ctx = ctx;
+    if (!ctx) return;
+    // Plain user input is delivered with an ExtensionContext, which can read
+    // and persist state but cannot create the next car session. Do not let
+    // that restricted context replace the command/session context that owns
+    // newSession().
+    const incomingCanCreateSession = typeof ctx.newSession === "function";
+    const currentCanCreateSession = typeof this.ctx?.newSession === "function";
+    if (incomingCanCreateSession || !currentCanCreateSession) this.ctx = ctx;
   }
 
   notify(message, level = "info") {
@@ -435,7 +442,7 @@ export class TrainMachine {
     this.notifyHumanRequest();
   }
 
-  async acceptHumanInput(value, ctx = this.ctx) {
+  async acceptHumanInput(value, ctx = this.ctx, { deferAdvance = false } = {}) {
     this.attachContext(ctx);
     if (ctx) this.restore(ctx);
     if (!this.state?.active || this.state.status !== "waiting_human" || this.state.active.mode !== "human") {
@@ -446,10 +453,10 @@ export class TrainMachine {
       && (!isObject(value) || !Object.prototype.hasOwnProperty.call(value, outputNames[0]))
       ? { [outputNames[0]]: value }
       : value;
-    return this.acceptHuman(outputs);
+    return this.acceptHuman(outputs, { deferAdvance });
   }
 
-  async acceptHuman(outputs) {
+  async acceptHuman(outputs, { deferAdvance = false } = {}) {
     if (!this.state?.active || this.state.status !== "waiting_human" || this.state.active.mode !== "human") {
       throw new Error("No human node is waiting for an answer");
     }
@@ -476,7 +483,7 @@ export class TrainMachine {
       at: now(),
     });
     await this.finishInvocation(frame, active.stepId, active.iteration, active.invocation, outputs);
-    await this.drive();
+    if (!deferAdvance) await this.drive();
     return `Human answer recorded for ${active.stepId}; Pi will continue.`;
   }
 
@@ -528,11 +535,15 @@ export class TrainMachine {
     await this.drive();
   }
 
-  queueAdvance() {
-    if (!this.state?.active || this.advanceQueued) return;
+  queueAdvance({ requireActive = true } = {}) {
+    if (!this.state || this.advanceQueued) return;
+    if (requireActive && !this.state.active) return;
+    if (!requireActive && this.state.status !== "running") return;
     this.advanceQueued = true;
     if (typeof this.pi?.sendUserMessage !== "function") {
-      void this.onSettled(this.ctx);
+      this.advanceQueued = false;
+      if (requireActive) void this.onSettled(this.ctx);
+      else void this.drive();
       return;
     }
     try {
@@ -545,6 +556,11 @@ export class TrainMachine {
 
   async advance(ctx) {
     this.advanceQueued = false;
+    if (!this.state?.active && this.state?.status === "running") {
+      this.attachContext(ctx);
+      await this.drive();
+      return;
+    }
     await this.onSettled(ctx);
   }
 
@@ -640,7 +656,8 @@ export function createTrainExtension(options = {}) {
       machine.attachContext(ctx);
       if (typeof event?.text !== "string" || event.text.trim().startsWith("/")) return { action: "continue" };
       if (machine.state?.status !== "waiting_human") return { action: "continue" };
-      await machine.acceptHumanInput(event.text, ctx);
+      await machine.acceptHumanInput(event.text, ctx, { deferAdvance: true });
+      machine.queueAdvance({ requireActive: false });
       return { action: "handled" };
     });
 
