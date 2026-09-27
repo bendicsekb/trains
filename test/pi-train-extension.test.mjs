@@ -115,6 +115,39 @@ steps:
   assert.equal(machine.state.frames[0].values.first.result, "first-result");
 });
 
+test("resume retries a blocked car that never created its worker session", async () => {
+  const directory = tempDir();
+  const trainPath = writeTrain(directory, "resume.yaml", `
+id: resume
+steps:
+  first:
+    inputs:
+      request: {doc: Work request.}
+    procedure:
+      - Produce the result.
+    outputs:
+      result:
+        doc: Result.
+        acceptance: [The result is concrete.]
+`);
+  const fake = fakePiContext(directory);
+  const machine = new TrainMachine({ pi: { appendEntry() {}, sendUserMessage() {} }, id: () => "run-resume" });
+  machine.attachContext(fake.root);
+  const newSession = fake.root.newSession;
+  fake.root.newSession = undefined;
+
+  await machine.start(trainPath, { request: "ship it" });
+  assert.equal(machine.status().status, "blocked");
+  assert.equal(machine.state.active.sessionId, null);
+
+  fake.root.newSession = newSession;
+  await machine.resume();
+
+  assert.equal(machine.status().status, "running");
+  assert.equal(machine.status().active.step, "first");
+  assert.equal(fake.sessions.length, 2, "resume creates a fresh worker session");
+});
+
 test("human nodes persist teaching as a prompt and resume with the human output", async () => {
   const directory = tempDir();
   const trainPath = writeTrain(directory, "human.yaml", `

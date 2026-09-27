@@ -584,6 +584,21 @@ export class TrainMachine {
     this.notify("Train paused", "info");
   }
 
+  async retryActiveCar(reason) {
+    const active = this.state.active;
+    const frame = this.state.frames[active.frameIndex];
+    const stepState = frame.steps[active.stepId];
+    const invocation = stepState.invocations.find((entry) => entry.invocation === active.invocation);
+    if (invocation) Object.assign(invocation, { status: "retrying", finishedAt: now(), error: reason });
+    stepState.status = "pending";
+    delete stepState.activeInvocation;
+    this.state.active = null;
+    this.state.status = "running";
+    delete this.state.blockedReason;
+    this.persist();
+    await this.drive();
+  }
+
   async resume() {
     if (!this.state || !["paused", "blocked"].includes(this.state.status)) throw new Error("Train is not paused or blocked");
     if (!this.state.active) throw new Error("Train has no active car");
@@ -592,6 +607,10 @@ export class TrainMachine {
       this.state.status = "waiting_human";
       this.persist();
       this.notifyHumanRequest();
+      return;
+    }
+    if (!this.state.active.sessionId) {
+      await this.retryActiveCar("The previous attempt did not create a worker session");
       return;
     }
     this.state.active.handoff = null;
