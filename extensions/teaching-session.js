@@ -5,6 +5,14 @@ import {
 function completedPromptOptions(controller) {
   return (controller.state?.prompts ?? [])
     .filter((prompt) => ["published", "read_only"].includes(prompt.status))
+    .sort((left, right) => right.sequence - left.sequence)
+    .map((prompt) => `${prompt.sequence}: ${prompt.prompt.replace(/\s+/g, " ").trim()} [${prompt.status}]`);
+}
+
+function backportPromptOptions(controller) {
+  return (controller.state?.prompts ?? [])
+    .filter((prompt) => prompt.status === "published")
+    .sort((left, right) => right.sequence - left.sequence)
     .map((prompt) => `${prompt.sequence}: ${prompt.prompt.replace(/\s+/g, " ").trim()} [${prompt.status}]`);
 }
 
@@ -28,6 +36,32 @@ export function createTeachingExtension(options = {}) {
       return ctx;
     };
 
+    const startBackport = async (args, ctx) => {
+      attach(ctx);
+      if (!controller.state) await controller.restore(ctx);
+      if (!controller.state) return;
+      if (!ctx.isIdle()) {
+        ctx.ui.notify("Backport waits until the current Pi prompt has finished; nothing was changed.", "warning");
+        return;
+      }
+
+      let identifier = args.trim().split(/\s+/).filter(Boolean)[0];
+      if (!identifier) {
+        const options = backportPromptOptions(controller);
+        if (!options.length) {
+          ctx.ui.notify("Backport requires at least one published code checkpoint; nothing was changed.", "warning");
+          return;
+        }
+        const selected = await ctx.ui.select("Choose the checkpoint to backport into", options);
+        if (!selected) {
+          ctx.ui.notify("Backport cancelled; nothing was changed.", "info");
+          return;
+        }
+        identifier = optionSequence(selected);
+      }
+      await controller.backport(identifier, ctx);
+    };
+
     pi.on("session_start", async (_event, ctx) => {
       attach(ctx);
       await controller.restore(ctx);
@@ -35,6 +69,7 @@ export function createTeachingExtension(options = {}) {
 
     pi.on("before_agent_start", async (event, ctx) => {
       attach(ctx);
+      if (controller.state?.operation?.kind === "backport") return;
       if (!controller.state || !["active", "awaiting_rewrite"].includes(controller.state.status)) return;
       await controller.recordPrompt(event.prompt, ctx);
     });
@@ -52,6 +87,7 @@ export function createTeachingExtension(options = {}) {
     pi.on("input", async (event, ctx) => {
       attach(ctx);
       if (isControlInput(event)) return { action: "continue" };
+      if (controller.state?.operation?.kind === "backport" && event.source === "extension") return { action: "continue" };
       if (!controller.state || !controller.state.status || controller.state.status === "ended") return { action: "continue" };
       if (controller.state.operation || controller.state.pendingPromptId || controller.state.status === "blocked") {
         ctx.ui.notify("Teaching is waiting for its current prompt or recovery operation; use /teach-resume-publication or wait for it to finish.", "warning");
@@ -124,6 +160,50 @@ export function createTeachingExtension(options = {}) {
           return;
         }
         await controller.rollback(identifier, explanation, ctx);
+      },
+    });
+
+    pi.registerCommand("teach-backport", {
+      description: "Ask Pi to rewrite the current correction into an earlier teaching checkpoint",
+      handler: async (args, ctx) => {
+        await startBackport(args, ctx);
+      },
+    });
+
+    pi.registerTool({
+      name: "teach_backport_complete",
+      label: "Teaching backport complete",
+      description: "Submit the agent-owned rewritten checkpoint chain after a teaching backport.",
+      promptSnippet: "Submit a completed teaching backport rewrite",
+      promptGuidelines: ["Use teach_backport_complete only after rewriting the selected checkpoint and every later affected published checkpoint, preserving one clean commit per checkpoint and leaving the branch clean."],
+      parameters: {
+        type: "object",
+        properties: {
+          checkpoints: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                sequence: { type: "integer" },
+                commit: { type: "string" },
+              },
+              required: ["sequence", "commit"],
+              additionalProperties: false,
+            },
+          },
+          summary: { type: "string" },
+        },
+        required: ["checkpoints", "summary"],
+        additionalProperties: false,
+      },
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        attach(ctx);
+        const rewrite = await controller.completeBackport(params);
+        return {
+          content: [{ type: "text", text: `Backport rewrite recorded for ${rewrite.checkpoints.length} checkpoint(s).` }],
+          details: rewrite,
+          terminate: true,
+        };
       },
     });
 

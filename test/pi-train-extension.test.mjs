@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { loadTrain } from "../src/train-definition.mjs";
 import { createTrainExtension, TrainMachine } from "../extensions/train-runner.js";
@@ -16,6 +17,8 @@ function writeTrain(directory, name, contents) {
   fs.writeFileSync(filePath, contents, "utf8");
   return filePath;
 }
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function fakePiContext(cwd) {
   const sessions = [];
@@ -110,6 +113,138 @@ steps:
   assert.equal(fake.sessions.length, 3, "the next car gets a distinct fresh session");
   assert.match(fake.prompts.at(-1).text, /first-result/);
   assert.equal(machine.state.frames[0].values.first.result, "first-result");
+});
+
+test("human nodes persist teaching as a prompt and resume with the human output", async () => {
+  const directory = tempDir();
+  const trainPath = writeTrain(directory, "human.yaml", `
+id: human
+steps:
+  teach:
+    inputs:
+      request: {doc: Work request.}
+    procedure:
+      - Prepare the decision context.
+    outputs:
+      briefing:
+        doc: Teaching block.
+        acceptance: [The context is explained.]
+  decide:
+    human:
+      prompt: {ref: teach.briefing}
+    outputs:
+      judgement:
+        doc: Human answer.
+        acceptance: [The answer is recorded.]
+`);
+  const fake = fakePiContext(directory);
+  const machine = new TrainMachine({ pi: { appendEntry() {}, sendUserMessage() {} }, id: () => "run-human" });
+  machine.attachContext(fake.root);
+
+  await machine.start(trainPath, { request: "choose a direction" });
+  await machine.acceptHandoff({
+    outputs: { briefing: "Current context and trade-offs." },
+    summary: "Prepared the teaching block.",
+    evidenceRefs: ["test:briefing"],
+    claimsNotMade: [],
+  });
+  await machine.onSettled();
+
+  assert.equal(machine.status().status, "waiting_human");
+  assert.equal(machine.status().active.mode, "human");
+  assert.equal(machine.state.active.humanPrompt, "Current context and trade-offs.");
+  assert.match(fake.notifications.at(-1).message, /Current context and trade-offs/);
+
+  await machine.acceptHumanInput("Choose the reversible option.");
+  assert.equal(machine.status().status, "completed");
+  assert.deepEqual(machine.state.outputs, { judgement: "Choose the reversible option." });
+  assert.ok(machine.state.history.some((entry) => entry.type === "human_answer"));
+});
+
+test("guided Wayfinder retries teaching and human judgement until the review accepts it", async () => {
+  const directory = tempDir();
+  const fake = fakePiContext(directory);
+  const machine = new TrainMachine({ pi: { appendEntry() {}, sendUserMessage() {} }, id: () => "run-guided-wayfinder" });
+  machine.attachContext(fake.root);
+
+  await machine.start(path.join(repoRoot, "trains/guided-wayfinder/guided-wayfinder.yaml"), {
+    goal: "Reach the goal",
+    current_system: "Partial system description",
+    blockers: "Unknown integration boundary",
+    constraints: "Keep changes reversible",
+  });
+
+  await machine.acceptHandoff({
+    outputs: { mission: { goal: "Reach the goal", initial_map: "Known parts and fog" } },
+    summary: "Established the destination and initial map.",
+    evidenceRefs: ["test:mission"],
+    claimsNotMade: [],
+  });
+  await machine.onSettled();
+
+  await machine.acceptHandoff({
+    outputs: { map: "Map after exploration", frontier: "Choose the integration boundary" },
+    summary: "Found the first decision frontier.",
+    evidenceRefs: ["test:frontier"],
+    claimsNotMade: [],
+  });
+  await machine.onSettled();
+
+  await machine.acceptHandoff({
+    outputs: { briefing: "Teaching: these are the two boundary options and their trade-offs." },
+    summary: "Taught the decision context.",
+    evidenceRefs: ["test:briefing-1"],
+    claimsNotMade: [],
+  });
+  await machine.onSettled();
+  assert.equal(machine.status().status, "waiting_human");
+  await machine.acceptHumanInput("I am not sure yet.");
+
+  await machine.acceptHandoff({
+    outputs: { result: { accepted: false, feedback: "Choose a boundary or ask for one specific missing fact." } },
+    summary: "The answer needs clarification.",
+    evidenceRefs: ["test:review-1"],
+    claimsNotMade: [],
+  });
+  await machine.onSettled();
+  assert.equal(machine.status().active?.step, "teach");
+
+  await machine.acceptHandoff({
+    outputs: { briefing: "Teaching again: option A is reversible; option B is faster but irreversible." },
+    summary: "Addressed the review feedback.",
+    evidenceRefs: ["test:briefing-2"],
+    claimsNotMade: [],
+  });
+  await machine.onSettled();
+  assert.equal(machine.status().status, "waiting_human");
+  await machine.acceptHumanInput("Choose option A because reversibility matters.");
+
+  await machine.acceptHandoff({
+    outputs: { result: { accepted: true, feedback: "The direction and guardrail are explicit." } },
+    summary: "The answer is sufficient.",
+    evidenceRefs: ["test:review-2"],
+    claimsNotMade: [],
+  });
+  await machine.onSettled();
+  assert.equal(machine.status().active.step, "fix");
+
+  await machine.acceptHandoff({
+    outputs: { fix_plan: "Apply the reversible boundary change and test it." },
+    summary: "Defined the fix steps.",
+    evidenceRefs: ["test:fix"],
+    claimsNotMade: [],
+  });
+  await machine.onSettled();
+  await machine.acceptHandoff({
+    outputs: { result: { stop: true, next_map: "Goal reached", next_frontier: null } },
+    summary: "Verified the goal.",
+    evidenceRefs: ["test:complete"],
+    claimsNotMade: [],
+  });
+  await machine.onSettled();
+
+  assert.equal(machine.status().status, "completed");
+  assert.ok(machine.state.history.filter((entry) => entry.type === "human_answer").length === 2);
 });
 
 test("replacement-session extension instance restores state before settling a car", async () => {
@@ -221,5 +356,5 @@ test("extension registers Pi-native commands and the terminating handoff tool", 
   assert.ok(tools.has("train_handoff"));
   assert.deepEqual(tools.get("train_handoff").parameters.required, ["outputs", "summary", "evidenceRefs", "claimsNotMade"]);
   assert.match(tools.get("train_handoff").promptGuidelines[0], /top-level summary/);
-  for (const name of ["train", "train-status", "train-advance", "train-steer", "train-pause", "train-resume", "train-cancel"]) assert.ok(commands.has(name), name);
+  for (const name of ["train", "train-status", "train-answer", "train-advance", "train-steer", "train-pause", "train-resume", "train-cancel"]) assert.ok(commands.has(name), name);
 });

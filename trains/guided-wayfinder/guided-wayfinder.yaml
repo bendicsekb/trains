@@ -1,0 +1,29 @@
+id: guided-wayfinder
+
+steps:
+  discover:
+    inputs:
+      goal: {doc: The outcome we are trying to reach.}
+      current_system: {doc: The current system as far as the human knows it.}
+      blockers: {doc: Known blockers or unknowns.}
+      constraints: {doc: "Safety, scope, time, or reversibility constraints."}
+    procedure:
+      - Set the scope and inspect enough of the system to map known facts, unknowns, blockers, and the first decision frontier.
+      - Keep the map low-resolution; the human supplies judgement, not system documentation.
+    outputs:
+      mission:
+        doc: "A bounded destination and initial map containing the current system, evidence, known territory, fog of war, blockers, constraints, and first decision frontier."
+        acceptance:
+          - The scope, evidence, unknowns, blockers, and first frontier are explicit.
+
+  wayfind:
+    inputs:
+      mission: {ref: discover.mission}
+    procedure:
+      ref: ./guided-wayfinder-cycle.yaml
+    repeat:
+      inputs:
+        previous: {ref: result}
+      until: {ref: result.stop}
+    outputs:
+      result: {ref: explore_next.result}

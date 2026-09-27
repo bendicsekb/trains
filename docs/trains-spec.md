@@ -186,23 +186,45 @@ Verification may classify the outcome as `accepted`, `partial`, `blocked`,
 loop predicate.
 
 The Pi Trains extension owns scheduling, fresh-session creation, bounded
-repetition, steering, persistence, and lifecycle transitions. It stores those
-runtime details in Pi custom session entries rather than train YAML. The native
-Pi extension and the shared train-definition parser are the supported runtime
-implementation. Specialized batch workflows may use their own supervisor and
-handoff protocols, but those are outside the generic Trains runtime contract.
+repetition, human blocking, steering, persistence, and lifecycle transitions.
+It stores those runtime details in Pi custom session entries rather than train
+YAML. The native Pi extension and the shared train-definition parser are the
+supported runtime implementation. Specialized batch workflows may use their
+own supervisor and handoff protocols, but those are outside the generic Trains
+runtime contract.
 
 ## Human steps
 
 A human step is a blocking dependency inside a running train or workflow. The
-run remains blocked until the required human result arrives, then resumes from
-that result and the persisted workflow state.
+run enters `waiting_human`, persists the prompt, and resumes only after the
+required human result arrives.
+
+The minimal syntax is:
+
+```yaml
+decide:
+  human:
+    prompt: {ref: teach.briefing}
+  outputs:
+    judgement:
+      doc: Human answer to the teaching block.
+      acceptance:
+        - The answer is recorded as the human's returned result.
+```
+
+A human step has no agent `procedure` and no ordinary `inputs`; its
+`human.prompt` is a reference to one prior output, normally a teaching or
+briefing block. Its outputs are the answer returned by the human and must be
+declared with `doc`. The Pi runner displays the prompt, accepts a plain-language
+answer or an explicit `/train-answer` submission, validates the declared output
+shape, and records a `human_answer` history entry before advancing dependent
+cars.
 
 Humans are treated like slow, imperfect external APIs: they may respond
 partially, return arbitrary artifacts, or require several interactions before
-the dependency is satisfied. The current contract defines the behavior but not
-yet a canonical YAML syntax or a universal rule for what is sufficient to
-resume.
+a dependency is satisfied. The persisted `waiting_human` state is the
+protocol boundary; output acceptance remains a separate semantic verification
+concern.
 
 ## Learning loop
 

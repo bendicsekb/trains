@@ -80,7 +80,11 @@ function validateOutput(output, label, errors) {
 function finalOutputs(definition) {
   const consumed = new Set();
   for (const step of Object.values(definition.steps)) {
-    for (const binding of Object.values(step.inputs)) {
+    const bindings = [
+      ...Object.values(step.inputs ?? {}),
+      ...(step.human?.prompt ? [step.human.prompt] : []),
+    ];
+    for (const binding of bindings) {
       if (bindingKind(binding) === "ref") {
         const parts = refParts(binding.ref);
         if (parts) consumed.add(`${parts[0]}.${parts[1]}`);
@@ -109,9 +113,14 @@ function validateDefinition(definition, filePath, stack = []) {
       errors.push(`${label} must be an object`);
       continue;
     }
-    if (!("inputs" in step) || !("procedure" in step) || !("outputs" in step)) errors.push(`${label} must contain inputs, procedure, and outputs`);
+    const hasProcedure = Object.prototype.hasOwnProperty.call(step, "procedure");
+    const hasHuman = Object.prototype.hasOwnProperty.call(step, "human");
+    if (!hasProcedure && !hasHuman) errors.push(`${label} must contain either procedure or human`);
+    if (hasProcedure && hasHuman) errors.push(`${label} cannot contain both procedure and human`);
+    if (!("outputs" in step)) errors.push(`${label} must contain outputs`);
+    if (hasProcedure && !("inputs" in step)) errors.push(`${label} must contain inputs when it has a procedure`);
 
-    const inputs = bindingEntries(step.inputs, `${label}.inputs`, errors);
+    const inputs = step.inputs === undefined ? [] : bindingEntries(step.inputs, `${label}.inputs`, errors);
     const inputNames = new Set();
     for (const [inputId, binding] of inputs) {
       if (inputNames.has(inputId)) errors.push(`${label}.inputs duplicates ${inputId}`);
@@ -127,29 +136,46 @@ function validateDefinition(definition, filePath, stack = []) {
       }
     }
 
-    const procedure = step.procedure;
-    if (Array.isArray(procedure)) {
-      if (procedure.length === 0 || !procedure.every(nonEmptyString)) errors.push(`${label}.procedure must contain non-empty instruction strings`);
-    } else if (isObject(procedure) && Object.keys(procedure).length === 1 && nonEmptyString(procedure.ref)) {
-      if (path.isAbsolute(procedure.ref) || procedure.ref.split(/[\\/]/).includes("..")) errors.push(`${label}.procedure.ref must be a contained relative path`);
-      else {
-        const nestedPath = path.resolve(path.dirname(filePath), procedure.ref);
-        if (stack.includes(nestedPath)) errors.push(`${label}.procedure.ref creates recursive train inclusion`);
-        else if (!fs.existsSync(nestedPath)) errors.push(`${label}.procedure.ref does not exist: ${nestedPath}`);
+    if (hasProcedure) {
+      const procedure = step.procedure;
+      if (Array.isArray(procedure)) {
+        if (procedure.length === 0 || !procedure.every(nonEmptyString)) errors.push(`${label}.procedure must contain non-empty instruction strings`);
+      } else if (isObject(procedure) && Object.keys(procedure).length === 1 && nonEmptyString(procedure.ref)) {
+        if (path.isAbsolute(procedure.ref) || procedure.ref.split(/[\\/]/).includes("..")) errors.push(`${label}.procedure.ref must be a contained relative path`);
         else {
-          try {
-            nested.set(stepId, loadTrain(nestedPath, [...stack, filePath]));
-          } catch (error) {
-            errors.push(`${label}.procedure.ref is invalid: ${error.message}`);
+          const nestedPath = path.resolve(path.dirname(filePath), procedure.ref);
+          if (stack.includes(nestedPath)) errors.push(`${label}.procedure.ref creates recursive train inclusion`);
+          else if (!fs.existsSync(nestedPath)) errors.push(`${label}.procedure.ref does not exist: ${nestedPath}`);
+          else {
+            try {
+              nested.set(stepId, loadTrain(nestedPath, [...stack, filePath]));
+            } catch (error) {
+              errors.push(`${label}.procedure.ref is invalid: ${error.message}`);
+            }
           }
         }
+      } else errors.push(`${label}.procedure must be an instruction array or {ref: ./train.yaml}`);
+    }
+
+    if (hasHuman) {
+      if (Object.prototype.hasOwnProperty.call(step, "inputs")) errors.push(`${label} human steps must not contain inputs; use human.prompt`);
+      if (!isObject(step.human) || Object.keys(step.human).length !== 1 || !Object.prototype.hasOwnProperty.call(step.human, "prompt")) {
+        errors.push(`${label}.human must contain only prompt`);
+      } else if (bindingKind(step.human.prompt) !== "ref") {
+        errors.push(`${label}.human.prompt must be a ref to a prior output`);
+      } else {
+        const parts = refParts(step.human.prompt.ref);
+        if (!parts) errors.push(`${label}.human.prompt.ref must be step.output[.path]`);
+        else if (parts[0] === stepId) errors.push(`${label}.human.prompt cannot depend on its own output`);
+        else findOutput(definition, parts[0], parts[1], errors, `${label}.human.prompt`);
       }
-    } else errors.push(`${label}.procedure must be an instruction array or {ref: ./train.yaml}`);
+    }
 
     const outputs = bindingEntries(step.outputs, `${label}.outputs`, errors);
     if (outputs.length === 0) errors.push(`${label}.outputs must contain at least one output`);
     for (const [outputId, output] of outputs) {
       validateOutput(output, `${label}.outputs.${outputId}`, errors);
+      if (hasHuman && outputBindingKind(output) !== "doc") errors.push(`${label}.outputs.${outputId} must be a doc for a human result`);
       if (outputBindingKind(output) === "ref") {
         const parts = refParts(output.ref);
         if (!parts) errors.push(`${label}.outputs.${outputId}.ref must be step.output or nested output reference`);
@@ -176,7 +202,7 @@ function validateDefinition(definition, filePath, stack = []) {
   }
 
   const docNames = new Set();
-  for (const step of Object.values(definition.steps)) for (const [name, binding] of Object.entries(step.inputs)) {
+  for (const step of Object.values(definition.steps)) for (const [name, binding] of Object.entries(step.inputs ?? {})) {
     if (bindingKind(binding) === "doc") {
       if (docNames.has(name)) errors.push(`unbound doc input ${name} is declared more than once`);
       docNames.add(name);

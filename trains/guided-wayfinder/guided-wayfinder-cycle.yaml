@@ -1,0 +1,64 @@
+id: guided-wayfinder-cycle
+
+steps:
+  explore:
+    inputs:
+      mission: {doc: The bounded destination and initial system map.}
+      previous: {doc: "Optional result from the previous cycle, including its updated map and unresolved frontier."}
+    procedure:
+      - Start from mission or the previous cycle's next_map and next_frontier.
+      - Explore only enough to clarify the frontier; preserve evidence, blockers, and unknowns.
+    outputs:
+      map:
+        doc: The current low-resolution system map, updated with evidence from this exploration.
+        acceptance:
+          - The map separates evidence, inference, and unknowns and stays bounded to the goal.
+      frontier:
+        doc: The smallest decision-relevant frontier that should be taught and judged next.
+        acceptance:
+          - The frontier names the next decision or investigation without assuming hidden human knowledge.
+
+  decision:
+    inputs:
+      map: {ref: explore.map}
+      frontier: {ref: explore.frontier}
+    procedure:
+      ref: ./guided-wayfinder-judgement.yaml
+    repeat:
+      inputs:
+        previous: {ref: review}
+      until: {ref: review.accepted}
+    outputs:
+      judgement:
+        ref: assess.judgement
+      review:
+        ref: assess.result
+
+  fix:
+    inputs:
+      map: {ref: explore.map}
+      judgement: {ref: decision.judgement}
+      review: {ref: decision.review}
+    procedure:
+      - Turn the accepted judgement into the smallest safe fix or investigation steps.
+      - Use the accepted review as a guardrail; state what will change, how it will be checked, and what remains fog.
+    outputs:
+      fix_plan:
+        doc: "A bounded sequence of fix or investigation steps with expected evidence, safety boundaries, and a clear next-cycle target."
+        acceptance:
+          - The steps follow from the judgement, are safe to execute, and include their check and remaining fog.
+
+  explore_next:
+    inputs:
+      map: {ref: explore.map}
+      frontier: {ref: explore.frontier}
+      judgement: {ref: decision.judgement}
+      fix_plan: {ref: fix.fix_plan}
+    procedure:
+      - Execute or investigate the fix steps, verify them, and record evidence, failures, new facts, and unknowns.
+      - Set stop true only for an evidenced goal or handoff; otherwise return next_map and next_frontier.
+    outputs:
+      result:
+        doc: "The verified cycle result containing outcome evidence, next_map, next_frontier, and a literal boolean stop field."
+        acceptance:
+          - The result contains evidence, blockers, unknowns, next_map, next_frontier, and a boolean stop.

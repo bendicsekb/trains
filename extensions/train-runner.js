@@ -34,7 +34,9 @@ function renderProcedure(procedure) {
 
 function renderOutputs(outputs) {
   return Object.entries(outputs).map(([name, binding]) => {
-    const lines = [`- ${name}: ${binding.doc ?? `reference ${binding.ref}`}`];
+    const lines = [binding.ref
+      ? `- ${name}: derived from ${binding.ref}; the runner resolves this output`
+      : `- ${name}: ${binding.doc}`];
     if (binding.acceptance?.length) lines.push(`  acceptance: ${binding.acceptance.join("; ")}`);
     return lines.join("\n");
   }).join("\n");
@@ -65,7 +67,7 @@ function resolveReference(ref, values, currentOutputs, description) {
 
 function resolveInputs(step, frame) {
   const resolved = {};
-  for (const [inputId, binding] of Object.entries(step.inputs)) {
+  for (const [inputId, binding] of Object.entries(step.inputs ?? {})) {
     if (bindingKind(binding) === "doc") {
       if (!Object.prototype.hasOwnProperty.call(frame.supplied, inputId)) {
         if (frame.optionalInputs?.includes(inputId)) continue;
@@ -91,7 +93,11 @@ function boundaryOutputs(train, frame) {
 
 function stepDependencies(train, step) {
   const dependencies = new Set();
-  for (const binding of Object.values(step.inputs)) {
+  const bindings = [
+    ...Object.values(step.inputs ?? {}),
+    ...(step.human?.prompt ? [step.human.prompt] : []),
+  ];
+  for (const binding of bindings) {
     if (bindingKind(binding) === "ref") {
       const parts = refParts(binding.ref);
       if (parts && train.definition.steps[parts[0]]) dependencies.add(parts[0]);
@@ -137,6 +143,15 @@ function outputSchema(step) {
   return Object.fromEntries(Object.entries(step.outputs).map(([name, binding]) => [name, {
     description: binding.doc ?? `Output ${name}`,
   }]));
+}
+
+function renderHumanPrompt(prompt) {
+  if (typeof prompt === "string") return prompt;
+  try {
+    return JSON.stringify(prompt, null, 2);
+  } catch {
+    return String(prompt);
+  }
 }
 
 function mapLeafOutputs(train, frame, stepId, produced) {
@@ -195,7 +210,7 @@ export class TrainMachine {
   }
 
   start(trainPath, inputs = {}) {
-    if (this.state && ["running", "starting", "paused", "blocked"].includes(this.state.status)) {
+    if (this.state && ["running", "starting", "paused", "blocked", "waiting_human"].includes(this.state.status)) {
       throw new Error(`A train is already active: ${this.state.trainId} (${this.state.status})`);
     }
     if (hasActiveTeachingSession(this.ctx)) {
@@ -295,7 +310,8 @@ export class TrainMachine {
           startedAt: now(),
         };
         this.persist();
-        await this.startCar(train, frame, ready, step, invocationInputs);
+        if (step.human) await this.startHuman(train, frame, ready, step);
+        else await this.startCar(train, frame, ready, step, invocationInputs);
       }
     } catch (error) {
       this.markBlocked(error.message);
@@ -369,7 +385,7 @@ export class TrainMachine {
       "",
       `When the car is complete, call ${HANDOFF_TOOL} exactly once. The arguments must have this top-level shape:`,
       '{"outputs":{"<declared-output>":"<value>"},"summary":"<concise summary>","evidenceRefs":["<source reference>"],"claimsNotMade":["<uncertainty or claim not made>"]}',
-      "Put every declared output under outputs; summary is a required top-level string, not an output. evidenceRefs and claimsNotMade are required top-level arrays.",
+      "Put every worker-produced doc output under outputs; ref outputs are derived by the runner. summary is a required top-level string, not an output. evidenceRefs and claimsNotMade are required top-level arrays.",
       "The handoff is the only completion signal. If you are blocked, explain the blocker and do not fabricate outputs.",
     ].join("\n");
     const current = this.ctx;
@@ -396,6 +412,74 @@ export class TrainMachine {
     }
   }
 
+  notifyHumanRequest() {
+    const active = this.state?.active;
+    if (!active || !Object.prototype.hasOwnProperty.call(active, "humanPrompt")) return;
+    this.notify([
+      `Human input required for ${active.stepId}.`,
+      "",
+      "Teaching/context:",
+      renderHumanPrompt(active.humanPrompt),
+      "",
+      `Reply with your judgement, or use /train-answer <answer>. Expected output: ${active.humanOutputNames.join(", ")}.`,
+    ].join("\n"), "info");
+  }
+
+  async startHuman(train, frame, stepId, step) {
+    const prompt = resolveReference(step.human.prompt.ref, frame.values, null, `human prompt ${stepId}`);
+    this.state.status = "waiting_human";
+    this.state.active.mode = "human";
+    this.state.active.humanPrompt = clone(prompt);
+    this.state.active.humanOutputNames = Object.keys(step.outputs);
+    this.persist();
+    this.notifyHumanRequest();
+  }
+
+  async acceptHumanInput(value, ctx = this.ctx) {
+    this.attachContext(ctx);
+    if (ctx) this.restore(ctx);
+    if (!this.state?.active || this.state.status !== "waiting_human" || this.state.active.mode !== "human") {
+      throw new Error("No human node is waiting for an answer");
+    }
+    const outputNames = this.state.active.humanOutputNames ?? [];
+    const outputs = outputNames.length === 1
+      && (!isObject(value) || !Object.prototype.hasOwnProperty.call(value, outputNames[0]))
+      ? { [outputNames[0]]: value }
+      : value;
+    return this.acceptHuman(outputs);
+  }
+
+  async acceptHuman(outputs) {
+    if (!this.state?.active || this.state.status !== "waiting_human" || this.state.active.mode !== "human") {
+      throw new Error("No human node is waiting for an answer");
+    }
+    if (!isObject(outputs)) throw new Error("Human answer must be an object when the node has multiple outputs");
+    const active = this.state.active;
+    const frame = this.state.frames[active.frameIndex];
+    const train = this.loadFrameTrain(frame);
+    const step = train.definition.steps[active.stepId];
+    const declared = Object.keys(step.outputs);
+    const missing = declared.filter((name) => !Object.prototype.hasOwnProperty.call(outputs, name));
+    const extra = Object.keys(outputs).filter((name) => !declared.includes(name));
+    if (missing.length || extra.length) {
+      throw new Error(`Human answer outputs must exactly match declared outputs (missing: ${missing.join(",") || "none"}; extra: ${extra.join(",") || "none"})`);
+    }
+    this.state.active = null;
+    this.state.status = "running";
+    this.state.history.push({
+      type: "human_answer",
+      trainId: train.definition.id,
+      step: active.stepId,
+      invocation: active.invocation,
+      iteration: active.iteration,
+      outputs: clone(outputs),
+      at: now(),
+    });
+    await this.finishInvocation(frame, active.stepId, active.iteration, active.invocation, outputs);
+    await this.drive();
+    return `Human answer recorded for ${active.stepId}; Pi will continue.`;
+  }
+
   async acceptHandoff(params) {
     // The handoff tool may be served by the replacement-session instance,
     // whose startup snapshot predates the withSession running transition.
@@ -406,7 +490,10 @@ export class TrainMachine {
     const frame = this.state.frames[this.state.active.frameIndex];
     const step = this.loadFrameTrain(frame).definition.steps[this.state.active.stepId];
     const declared = Object.keys(step.outputs);
-    const missing = declared.filter((name) => !Object.prototype.hasOwnProperty.call(params.outputs, name));
+    const produced = Object.entries(step.outputs)
+      .filter(([, binding]) => outputBindingKind(binding) === "doc")
+      .map(([name]) => name);
+    const missing = produced.filter((name) => !Object.prototype.hasOwnProperty.call(params.outputs, name));
     const extra = Object.keys(params.outputs).filter((name) => !declared.includes(name));
     if (missing.length || extra.length) throw new Error(`Handoff outputs must exactly match declared outputs (missing: ${missing.join(",") || "none"}; extra: ${extra.join(",") || "none"})`);
     if (!Array.isArray(params.evidenceRefs) || !Array.isArray(params.claimsNotMade) || typeof params.summary !== "string") {
@@ -463,6 +550,7 @@ export class TrainMachine {
 
   async steer(text) {
     if (!this.state?.active) throw new Error("No active car to steer");
+    if (this.state.active.mode === "human") throw new Error("Human nodes accept answers with /train-answer or plain text; they cannot be steered");
     if (typeof text !== "string" || !text.trim()) throw new Error("Steering text is required");
     this.state.status = "running";
     this.state.active.handoff = null;
@@ -476,7 +564,7 @@ export class TrainMachine {
     if (!this.state?.active) throw new Error("No active train");
     this.state.status = "paused";
     this.persist();
-    this.ctx?.abort?.();
+    if (this.state.active.mode !== "human") this.ctx?.abort?.();
     this.notify("Train paused", "info");
   }
 
@@ -484,6 +572,12 @@ export class TrainMachine {
     if (!this.state || !["paused", "blocked"].includes(this.state.status)) throw new Error("Train is not paused or blocked");
     if (!this.state.active) throw new Error("Train has no active car");
     this.state.status = "running";
+    if (this.state.active.mode === "human") {
+      this.state.status = "waiting_human";
+      this.persist();
+      this.notifyHumanRequest();
+      return;
+    }
     this.state.active.handoff = null;
     this.persist();
     const message = "Resume this car from the current state. Re-check the work, then call train_handoff when complete.";
@@ -507,6 +601,7 @@ export class TrainMachine {
       status: this.state.status,
       active: this.state.active ? {
         step: this.state.active.stepId,
+        mode: this.state.active.mode ?? "agent",
         invocation: this.state.active.invocation,
         iteration: this.state.active.iteration,
         handoffRecorded: Boolean(this.state.active.handoff),
@@ -537,7 +632,16 @@ export function createTrainExtension(options = {}) {
       machine.attachContext(ctx);
       if (machine.restore(ctx)) {
         machine.notify(`Train ${machine.state.trainId}: ${machine.state.status}`, "info");
+        if (machine.state.status === "waiting_human") machine.notifyHumanRequest();
       }
+    });
+
+    pi.on("input", async (event, ctx) => {
+      machine.attachContext(ctx);
+      if (typeof event?.text !== "string" || event.text.trim().startsWith("/")) return { action: "continue" };
+      if (machine.state?.status !== "waiting_human") return { action: "continue" };
+      await machine.acceptHumanInput(event.text, ctx);
+      return { action: "handled" };
     });
 
     pi.on("agent_settled", async () => machine.queueAdvance());
@@ -547,7 +651,7 @@ export function createTrainExtension(options = {}) {
       label: "Train handoff",
       description: "Finish the current Trains car with its declared outputs and evidence boundary.",
       promptSnippet: "Complete the current train car with a structured handoff",
-      promptGuidelines: ["Call this exactly once when the car is complete. Put declared values under outputs and provide top-level summary, evidenceRefs, and claimsNotMade. Do not invent undeclared outputs."],
+      promptGuidelines: ["Call this exactly once when the car is complete. Put worker-produced doc values under outputs; ref outputs are resolved by the runner. Provide top-level summary, evidenceRefs, and claimsNotMade. Do not invent undeclared outputs."],
       parameters: HANDOFF_SCHEMA,
       async execute(_toolCallId, params) {
         const message = await machine.acceptHandoff(params);
@@ -581,6 +685,22 @@ export function createTrainExtension(options = {}) {
       handler: async (_args, ctx) => {
         machine.attachContext(ctx);
         ctx.ui.notify(JSON.stringify(machine.status()), "info");
+      },
+    });
+
+    pi.registerCommand("train-answer", {
+      description: "Submit an answer to the waiting human train node",
+      handler: async (args, ctx) => {
+        machine.attachContext(ctx);
+        const text = args.trim();
+        if (!text) throw new Error("Usage: /train-answer <answer> or /train-answer {\"output\": ...}");
+        let value = text;
+        try {
+          value = JSON.parse(text);
+        } catch {
+          // A plain answer is valid when the human node declares one output.
+        }
+        await machine.acceptHumanInput(value, ctx);
       },
     });
 

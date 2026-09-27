@@ -85,6 +85,8 @@ The workflow must preserve evidence links for every extracted rule. A pattern is
 
 The book-guided slow loop is [trains/slow-loops/slow-loop.yaml](trains/slow-loops/slow-loop.yaml). It takes one engineering book or body of knowledge as input, inspects the target codebase for evidence-backed rule candidates, matches them to the book, defines tests, and implements only the justified changes. An empty candidate set or no-change result is valid when the inspection does not support an improvement.
 
+The guided Wayfinder train is [trains/guided-wayfinder/guided-wayfinder.yaml](trains/guided-wayfinder/guided-wayfinder.yaml), with its [founding note](trains/guided-wayfinder/founding-note.md). It keeps the map and fog-of-war model, but makes the loop explicit: explore, teach, ask the human, review and re-teach until the answer is sufficient, turn the judgement into fix steps, and explore again. Pi explains the decision-relevant context before asking for human judgement; the human does not need to know the whole system or specify implementation details.
+
 ## Goal
 
 The goal is to externalise recurring human engineering workflows so agents can execute them with less micromanagement.
@@ -108,18 +110,31 @@ Inside Pi, start a train with:
 
 ```text
 /train trains/your-train.yaml {"request":"..."}
+/train trains/guided-wayfinder/guided-wayfinder.yaml {"goal":"...","current_system":"...","blockers":"...","constraints":"..."}
 /train-status
+/train-answer <answer>
 /train-steer Please re-check the evidence boundary.
 /train-pause
 /train-resume
 /train-cancel
 ```
 
+Teaching sessions are available through the companion extension:
+
+```text
+/teach-start
+/teach-status
+/teach-rollback
+/teach-backport
+/teach-resume-publication
+/teach-end
+```
+
 The extension is the state machine: it loads the lean YAML, schedules runnable
 cars, creates a fresh Pi session with `newSession()` for every invocation,
 passes only declared inputs, and advances only after the car calls the
-terminating `train_handoff` tool and Pi emits `agent_settled`. In RPC and
-replacement-session runtimes, that event queues the internal
+terminating `train_handoff` tool and Pi emits `agent_settled`; human cars
+advance after their declared answer is submitted. In RPC and replacement-session runtimes, that event queues the internal
 `/train-advance` command so the next transition re-enters through a
 command-capable context before calling `newSession()`. Complete state
 snapshots are persisted as `trains.state.v1` custom session entries, so the
@@ -132,6 +147,12 @@ The handoff is structurally validated. YAML acceptance clauses remain
 worker-facing prose unless a deterministic verifier or human review supplies
 semantic evidence; terminal runs therefore retain a verification boundary
 instead of treating an agent assertion as independent proof.
+
+Human nodes are first-class blocking cars. A human car receives one declared
+prompt reference (usually a teaching block), persists as `waiting_human`, and
+returns its declared answer outputs when the human responds. Plain text is
+accepted for a single-output human car; `/train-answer {"output":"..."}` can
+submit named outputs explicitly.
 
 The supported runtime is the native Pi extension plus the shared YAML parser:
 
@@ -148,7 +169,7 @@ The supported runtime is the native Pi extension plus the shared YAML parser:
 The first workflow establishes a deliberately small schema vocabulary:
 
 - `id` identifies a train;
-- each step has only `inputs`, `procedure`, and `outputs`;
+- each agent step has `inputs`, `procedure`, and `outputs`; a human step has a `human.prompt` reference and `outputs`;
 - `doc` defines an input or output inline and `ref` links to another output;
 - output-local `acceptance` validates that output;
 - optional car-level `repeat` declares explicit feedback inputs and the accepted output that ends the loop.
@@ -157,7 +178,9 @@ Pi execution details and run evidence live beside the workflow in runners, contr
 
 Remaining design questions are now downstream of this first workflow: which artifact types deserve standard formats, how different execution engines should expose replay, and which metrics generalise across train families.
 
-Human steps also need a future contract for what counts as enough evidence or output to resume.
+Human output acceptance remains semantic: the runner validates the declared
+shape and records the answer, while independent verification determines
+whether the answer is sufficient for the train's goal.
 
 ## References
 

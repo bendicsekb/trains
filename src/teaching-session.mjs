@@ -34,7 +34,7 @@ function promptText(entry) {
 }
 
 function isActiveStatus(status) {
-  return ["active", "publishing", "rolling_back", "awaiting_rewrite", "blocked"].includes(status);
+  return ["active", "publishing", "rolling_back", "backporting", "awaiting_rewrite", "blocked"].includes(status);
 }
 
 function isCodePromptStatus(status) {
@@ -129,13 +129,8 @@ export class GitRepository {
     return this.command(["rev-parse", `${commit}^`], `Unable to read parent of ${commit}`);
   }
 
-  async commitSignatureStatus(commit) {
-    return this.command(["show", "-s", "--format=%G?", commit], `Unable to inspect signature of ${commit}`);
-  }
-
-  async assertUnsigned(commit) {
-    const status = await this.commitSignatureStatus(commit);
-    if (status !== "N") throw new Error(`Teaching commit ${commit} is signed or has an unknown signature state (${status})`);
+  async resolveCommit(commit) {
+    return this.command(["rev-parse", "--verify", `${commit}^{commit}`], `Unable to resolve commit ${commit}`);
   }
 
   async remoteHead(branch = undefined) {
@@ -382,6 +377,7 @@ export class TeachingSessionController {
       updatedAt: this.clock(),
       prompts: [],
       rollbacks: [],
+      backports: [],
       pullRequest: null,
       operation: null,
       pendingPromptId: null,
@@ -462,10 +458,12 @@ export class TeachingSessionController {
 
   async settle(ctx = this.ctx, { willRetry = false } = {}) {
     this.attachContext(ctx);
-    if (willRetry || !this.state?.pendingPromptId || this.settling) return;
+    if (willRetry || !this.state || this.settling) return;
+    if (!this.state.pendingPromptId && this.state.operation?.kind !== "backport") return;
     this.settling = true;
     try {
-      await this.publishPending();
+      if (this.state.operation?.kind === "backport") await this.publishBackport();
+      else await this.publishPending();
     } catch (error) {
       this.failOperation(error);
     } finally {
@@ -486,7 +484,6 @@ export class TeachingSessionController {
       this.persist();
     }
     await this.git.ensureOnBranch(this.state.sessionBranch);
-    const recovering = this.state.status === "blocked" && this.state.operation?.kind === "publish";
     const operation = this.state.operation?.kind === "publish"
       ? this.state.operation
       : { kind: "publish", promptId: prompt.id, stage: "commit", preCommit: prompt.preCommit };
@@ -494,18 +491,16 @@ export class TeachingSessionController {
     this.state.status = "publishing";
     this.persist();
 
-    let head = await this.git.head();
+    const head = await this.git.head();
     if (operation.stage === "commit") {
       if (head !== prompt.preCommit) {
-        if (recovering && await this.git.isDirectChild(prompt.preCommit, head) && (await this.git.status()) === "") {
-          await this.git.assertUnsigned(head);
+        if (await this.git.isDirectChild(prompt.preCommit, head) && (await this.git.status()) === "") {
           operation.commit = head;
         } else {
           throw new Error(`Pi created an unexpected commit while processing prompt ${prompt.sequence}: ${head}`);
         }
       } else if (await this.detectChanges()) {
         operation.commit = await this.git.addAndCommit(`teach(${prompt.sequence}): ${prompt.prompt.replace(/\s+/g, " ").trim().slice(0, 72)}`);
-        await this.git.assertUnsigned(operation.commit);
       } else {
         prompt.status = "read_only";
         prompt.commit = head;
@@ -520,7 +515,6 @@ export class TeachingSessionController {
       prompt.commit = operation.commit;
       operation.stage = "push";
       this.persist();
-      head = operation.commit;
     }
 
     if (operation.stage === "push") {
@@ -538,7 +532,7 @@ export class TeachingSessionController {
         head: this.state.sessionBranch,
         base: this.state.originalBranch,
         title: `Teaching session: ${titlePrompt.prompt.replace(/\s+/g, " ").trim().slice(0, 72)}`,
-        body: `Teaching session ${this.state.id}. Each settled code-producing prompt is published as an unsigned checkpoint.`,
+        body: `Teaching session ${this.state.id}. Each settled code-producing prompt is published as a checkpoint.`,
       });
       this.state.pullRequest = {
         number: pullRequest.number,
@@ -560,6 +554,229 @@ export class TeachingSessionController {
     this.notify(`Teaching prompt ${prompt.sequence} published${this.state.pullRequest?.url ? `: ${this.state.pullRequest.url}` : ""}`, "success");
   }
 
+  async backport(identifier, ctx = this.ctx) {
+    this.attachContext(ctx);
+    if (!this.state || !isActiveStatus(this.state.status)) throw new Error("No active teaching session");
+    if (ctx?.isIdle && !ctx.isIdle()) throw new Error("Wait for the current Pi prompt to finish before starting a backport");
+    if (this.state.operation || this.state.pendingPromptId) throw new Error("Backport is unavailable until the current prompt is fully published");
+
+    const prompt = this.findPrompt(identifier);
+    if (prompt.status !== "published") throw new Error(`Prompt ${prompt.sequence} is not a published code checkpoint`);
+    await this.git.ensureOnBranch(this.state.sessionBranch);
+    await this.git.assertClean("Backports must begin from a clean session branch");
+
+    const abandonedTip = await this.git.head();
+    const remoteSessionSha = await this.git.remoteHead(this.state.sessionBranch);
+    const backportId = `${this.state.id}:b${(this.state.backports?.length ?? 0) + 1}`;
+    const backupBranch = `teach/backup-${safeBranchPart(this.state.id)}-backport-${prompt.sequence}-${shortHash(abandonedTip)}`;
+    const operation = {
+      kind: "backport",
+      backportId,
+      targetPromptId: prompt.id,
+      targetPromptSequence: prompt.sequence,
+      stage: "backup",
+      abandonedTip,
+      remoteSessionSha,
+      backupBranch,
+      backupRemoteSha: null,
+      previousPrompts: clone(this.state.prompts),
+      previousPullRequest: clone(this.state.pullRequest),
+      startedAt: this.clock(),
+      rewrite: null,
+    };
+    this.state.operation = operation;
+    this.state.status = "backporting";
+    this.persist();
+
+    try {
+      await this.preserveBackportBackup(operation);
+      operation.stage = "awaiting_agent";
+      this.persist();
+      await this.sendBackportPrompt();
+    } catch (error) {
+      this.failOperation(error);
+      throw error;
+    }
+    return clone(this.state);
+  }
+
+  async preserveBackportBackup(operation) {
+    await this.git.ensureOnBranch(this.state.sessionBranch);
+    await this.git.createBranch(operation.backupBranch, operation.abandonedTip);
+    const existingRemote = await this.git.remoteHead(operation.backupBranch);
+    if (existingRemote && existingRemote !== operation.abandonedTip) {
+      throw new Error(`Backup branch ${operation.backupBranch} is ${existingRemote}, expected ${operation.abandonedTip}`);
+    }
+    if (!existingRemote) await this.git.pushBranch(operation.backupBranch);
+    const backupRemoteSha = await this.git.remoteHead(operation.backupBranch);
+    if (backupRemoteSha !== operation.abandonedTip) {
+      throw new Error(`Backup branch ${operation.backupBranch} is ${backupRemoteSha}, expected ${operation.abandonedTip}`);
+    }
+    operation.backupRemoteSha = backupRemoteSha;
+    this.persist();
+  }
+
+  backportPrompt() {
+    const operation = this.state?.operation;
+    const target = this.state?.prompts?.find((prompt) => prompt.id === operation?.targetPromptId);
+    if (!operation || operation.kind !== "backport" || !target) throw new Error("Backport operation is incomplete");
+    const checkpoints = this.state.prompts
+      .filter((prompt) => prompt.sequence >= target.sequence && prompt.status === "published")
+      .map((prompt) => `${prompt.sequence}: ${prompt.prompt.replace(/\s+/g, " ").trim()}`)
+      .join("\n");
+    return [
+      `Backport the correction from this conversation into teaching checkpoint ${target.sequence}.`,
+      "You own the entire history rewrite. Do not mechanically cherry-pick or ask the extension to apply a patch.",
+      "Inspect the existing implementation and rewrite the selected checkpoint and every later affected checkpoint so the learned correction is represented at the right point in history.",
+      "Preserve one clean commit for every published code checkpoint listed below, in sequence order.",
+      "Do not push. Leave the teaching branch clean at the rewritten final commit.",
+      "Run the relevant tests and verify the final commit chain before reporting completion.",
+      "When complete, call teach_backport_complete with the rewritten commit SHA for every listed checkpoint and a concise summary.",
+      "",
+      "Checkpoints that must be represented:",
+      checkpoints,
+    ].join("\n");
+  }
+
+  async sendBackportPrompt() {
+    if (!this.ctx?.sendUserMessage) throw new Error("Pi context cannot start the backport agent turn");
+    this.state.status = "backporting";
+    this.persist();
+    await this.ctx.sendUserMessage(this.backportPrompt(), { expandPromptTemplates: false });
+  }
+
+  async completeBackport(params) {
+    const operation = this.state?.operation;
+    if (!operation || operation.kind !== "backport") throw new Error("No backport is waiting for completion");
+    if (!Array.isArray(params?.checkpoints) || typeof params?.summary !== "string" || !params.summary.trim()) {
+      throw new Error("Backport completion requires checkpoints[] and a nonblank summary");
+    }
+    const target = this.state.prompts.find((prompt) => prompt.id === operation.targetPromptId);
+    if (!target) throw new Error("Backport target prompt is missing");
+    const expected = this.state.prompts
+      .filter((prompt) => prompt.sequence >= target.sequence && prompt.status === "published")
+      .map((prompt) => prompt.sequence);
+    const actual = params.checkpoints.map((checkpoint) => Number(checkpoint?.sequence));
+    if (actual.length !== expected.length || actual.some((sequence, index) => sequence !== expected[index])) {
+      throw new Error(`Backport checkpoints must exactly cover sequences ${expected.join(", ")}`);
+    }
+
+    const normalized = [];
+    let parent = target.preCommit;
+    for (const checkpoint of params.checkpoints) {
+      if (!Number.isInteger(Number(checkpoint?.sequence)) || typeof checkpoint?.commit !== "string" || !checkpoint.commit.trim()) {
+        throw new Error("Each backport checkpoint requires an integer sequence and commit SHA");
+      }
+      const requestedCommit = checkpoint.commit.trim();
+      if (!/^[0-9a-f]{7,64}$/i.test(requestedCommit)) throw new Error(`Invalid commit SHA for checkpoint ${checkpoint.sequence}`);
+      const commit = await this.git.resolveCommit(requestedCommit);
+      const actualParent = await this.git.commitParent(commit);
+      if (actualParent !== parent) {
+        throw new Error(`Rewritten checkpoint ${checkpoint.sequence} must be a direct child of ${parent}, found parent ${actualParent}`);
+      }
+      normalized.push({ sequence: Number(checkpoint.sequence), commit });
+      parent = commit;
+    }
+    const head = await this.git.head();
+    if (head !== parent) throw new Error(`Backport final commit is ${parent}, but HEAD is ${head}`);
+    await this.git.assertClean("Backport must finish with a clean teaching branch");
+
+    operation.rewrite = { checkpoints: normalized, summary: params.summary.trim(), verifiedAt: this.clock() };
+    operation.stage = "rewrite_verified";
+    this.persist();
+    return clone(operation.rewrite);
+  }
+
+  async publishBackport() {
+    const operation = this.state?.operation;
+    if (!operation || operation.kind !== "backport") throw new Error("No backport is waiting for publication");
+    if (!operation.rewrite?.checkpoints?.length) throw new Error("Backport agent has not submitted a complete rewrite");
+    await this.git.ensureOnBranch(this.state.sessionBranch);
+    await this.git.assertClean("Backport must finish with a clean teaching branch");
+
+    const finalCommit = operation.rewrite.checkpoints.at(-1).commit;
+    const head = await this.git.head();
+    if (head !== finalCommit) throw new Error(`Backport final commit is ${finalCommit}, but HEAD is ${head}`);
+
+    if (operation.stage === "rewrite_verified" || operation.stage === "push") {
+      const currentRemote = await this.git.remoteHead(this.state.sessionBranch);
+      if (currentRemote !== operation.remoteSessionSha) {
+        throw new Error(`Remote session branch changed during backport: expected ${operation.remoteSessionSha ?? "absent"}, found ${currentRemote ?? "absent"}`);
+      }
+      operation.stage = "push";
+      this.state.status = "publishing";
+      this.persist();
+      if (operation.remoteSessionSha) await this.git.pushBranch(this.state.sessionBranch, { forceWithLease: operation.remoteSessionSha });
+      else await this.git.pushBranch(this.state.sessionBranch);
+      const remoteSha = await this.git.remoteHead(this.state.sessionBranch);
+      if (remoteSha !== finalCommit) throw new Error(`Remote session branch is ${remoteSha}, expected ${finalCommit}`);
+      operation.rewrite.remoteSha = remoteSha;
+      operation.stage = "pull_request";
+      this.persist();
+    }
+
+    if (operation.stage === "pull_request") {
+      if (!this.state.pullRequest) {
+        const target = this.state.prompts.find((prompt) => prompt.id === operation.targetPromptId);
+        const pullRequest = await this.github.createOrReuseDraft({
+          head: this.state.sessionBranch,
+          base: this.state.originalBranch,
+          title: `Teaching session: ${target.prompt.replace(/\s+/g, " ").trim().slice(0, 72)}`,
+          body: `Teaching session ${this.state.id}. Each settled code-producing prompt is published as a checkpoint.`,
+        });
+        this.state.pullRequest = {
+          number: pullRequest.number,
+          url: pullRequest.url,
+          isDraft: pullRequest.isDraft !== false,
+          base: pullRequest.baseRefName ?? this.state.originalBranch,
+          head: pullRequest.headRefName ?? this.state.sessionBranch,
+          headSha: pullRequest.headRefOid ?? operation.rewrite.remoteSha,
+        };
+      } else {
+        this.state.pullRequest.headSha = operation.rewrite.remoteSha;
+      }
+
+      const target = this.state.prompts.find((prompt) => prompt.id === operation.targetPromptId);
+      const rewrittenBySequence = new Map(operation.rewrite.checkpoints.map((checkpoint) => [checkpoint.sequence, checkpoint.commit]));
+      let parent = target.preCommit;
+      for (const prompt of this.state.prompts.filter((candidate) => candidate.sequence >= target.sequence)) {
+        if (prompt.status === "published") {
+          const commit = rewrittenBySequence.get(prompt.sequence);
+          if (!commit) throw new Error(`Missing rewritten commit for checkpoint ${prompt.sequence}`);
+          prompt.historyRewrittenFrom = prompt.commit;
+          prompt.preCommit = parent;
+          prompt.commit = commit;
+          prompt.remoteSha = operation.rewrite.remoteSha;
+          parent = commit;
+        } else if (prompt.status === "read_only") {
+          prompt.preCommit = parent;
+          prompt.commit = parent;
+          prompt.remoteSha = operation.rewrite.remoteSha;
+        }
+      }
+
+      this.state.backports ??= [];
+      this.state.backports.push({
+        id: operation.backportId,
+        targetPromptId: operation.targetPromptId,
+        targetPromptSequence: operation.targetPromptSequence,
+        abandonedTip: operation.abandonedTip,
+        remoteSessionSha: operation.remoteSessionSha,
+        backupBranch: operation.backupBranch,
+        backupRemoteSha: operation.backupRemoteSha,
+        previousPrompts: operation.previousPrompts,
+        previousPullRequest: operation.previousPullRequest,
+        rewrite: operation.rewrite,
+        status: "complete",
+        completedAt: this.clock(),
+      });
+      this.state.operation = null;
+      this.state.status = "active";
+      this.persist();
+      this.notify(`Backported the correction into checkpoint ${operation.targetPromptSequence}`, "success");
+    }
+  }
+
   failOperation(error) {
     if (!this.state) return;
     this.state.status = "blocked";
@@ -574,6 +791,18 @@ export class TeachingSessionController {
     try {
       if (this.state.operation.kind === "publish") await this.publishPending();
       else if (this.state.operation.kind === "rollback") await this.resumeRollback();
+      else if (this.state.operation.kind === "backport") {
+        if (this.state.operation.stage === "backup") {
+          await this.preserveBackportBackup(this.state.operation);
+          this.state.operation.stage = "awaiting_agent";
+          this.persist();
+          await this.sendBackportPrompt();
+        } else if (!this.state.operation.rewrite) {
+          await this.sendBackportPrompt();
+        } else {
+          await this.publishBackport();
+        }
+      }
       else throw new Error(`Unknown teaching operation ${this.state.operation.kind}`);
     } catch (error) {
       this.failOperation(error);

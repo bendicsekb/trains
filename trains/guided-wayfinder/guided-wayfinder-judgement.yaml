@@ -1,0 +1,40 @@
+id: guided-wayfinder-judgement
+
+steps:
+  teach:
+    inputs:
+      map: {doc: The current system map.}
+      frontier: {doc: The decision-relevant frontier to resolve.}
+      previous: {doc: "Optional previous answer review and feedback."}
+    procedure:
+      - Explain the system context, evidence, unknowns, options, trade-offs, and one clear question for this frontier.
+      - If previous feedback exists, teach the missing context instead of repeating the question.
+    outputs:
+      briefing:
+        doc: "A decision-ready teaching block for the human node, including any feedback-driven clarification."
+        acceptance:
+          - The briefing explains the context, marks unknowns, and addresses previous feedback.
+
+  decide:
+    human:
+      prompt: {ref: teach.briefing}
+    outputs:
+      judgement:
+        doc: The human answer to the teaching block.
+        acceptance:
+          - The answer is recorded exactly as returned by the human node.
+
+  assess:
+    inputs:
+      briefing: {ref: teach.briefing}
+      judgement: {ref: decide.judgement}
+    procedure:
+      - Mark accepted true only when the answer gives a relevant direction or constraint with no decision-critical ambiguity.
+      - If false, return concrete feedback; do not replace the human's judgement.
+    outputs:
+      judgement:
+        ref: decide.judgement
+      result:
+        doc: "Answer review with a literal boolean accepted field, concrete feedback, and any decision-critical missing context."
+        acceptance:
+          - accepted is boolean, and false includes feedback for the next teaching block.
