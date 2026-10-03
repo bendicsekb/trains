@@ -48,6 +48,15 @@ function bindingEntries(bindings, label, errors) {
   return Object.entries(bindings);
 }
 
+function inputBindings(step) {
+  return [
+    ...Object.values(step.inputs ?? {}),
+    ...(step.human?.prompt ? [step.human.prompt] : []),
+    ...(step.human?.when ? [step.human.when] : []),
+    ...Object.values(step.human?.otherwise ?? {}),
+  ];
+}
+
 function findOutput(definition, stepId, outputId, errors, label) {
   const step = definition.steps[stepId];
   if (!step) {
@@ -80,11 +89,7 @@ function validateOutput(output, label, errors) {
 function finalOutputs(definition) {
   const consumed = new Set();
   for (const step of Object.values(definition.steps)) {
-    const bindings = [
-      ...Object.values(step.inputs ?? {}),
-      ...(step.human?.prompt ? [step.human.prompt] : []),
-    ];
-    for (const binding of bindings) {
+    for (const binding of inputBindings(step)) {
       if (bindingKind(binding) === "ref") {
         const parts = refParts(binding.ref);
         if (parts) consumed.add(`${parts[0]}.${parts[1]}`);
@@ -99,9 +104,10 @@ function finalOutputs(definition) {
 function validateDefinition(definition, filePath, stack = []) {
   const errors = [];
   if (!isObject(definition)) return { valid: false, errors: ["root must be an object"] };
-  const allowed = new Set(["id", "steps"]);
+  const allowed = new Set(["id", "session", "steps"]);
   for (const key of Object.keys(definition)) if (!allowed.has(key)) errors.push(`unknown root field ${key}; state belongs to Pi`);
   if (!nonEmptyString(definition.id)) errors.push("id must be a non-empty string");
+  if (definition.session !== undefined && !["fresh", "shared"].includes(definition.session)) errors.push("session must be fresh or shared");
   if (!isObject(definition.steps) || Object.keys(definition.steps).length === 0) errors.push("steps must be a non-empty object");
   if (!isObject(definition.steps)) return { valid: errors.length === 0, errors, nested: new Map(), finalOutputs: [] };
 
@@ -159,15 +165,40 @@ function validateDefinition(definition, filePath, stack = []) {
 
     if (hasHuman) {
       if (Object.prototype.hasOwnProperty.call(step, "inputs")) errors.push(`${label} human steps must not contain inputs; use human.prompt`);
-      if (!isObject(step.human) || Object.keys(step.human).length !== 1 || !Object.prototype.hasOwnProperty.call(step.human, "prompt")) {
-        errors.push(`${label}.human must contain only prompt`);
-      } else if (bindingKind(step.human.prompt) !== "ref") {
-        errors.push(`${label}.human.prompt must be a ref to a prior output`);
+      const allowedHumanFields = new Set(["prompt", "when", "otherwise"]);
+      if (!isObject(step.human) || !Object.prototype.hasOwnProperty.call(step.human, "prompt")
+        || Object.keys(step.human).some((key) => !allowedHumanFields.has(key))) {
+        errors.push(`${label}.human must contain prompt and may contain when and otherwise`);
       } else {
-        const parts = refParts(step.human.prompt.ref);
-        if (!parts) errors.push(`${label}.human.prompt.ref must be step.output[.path]`);
-        else if (parts[0] === stepId) errors.push(`${label}.human.prompt cannot depend on its own output`);
-        else findOutput(definition, parts[0], parts[1], errors, `${label}.human.prompt`);
+        const validateHumanReference = (binding, bindingLabel) => {
+          if (bindingKind(binding) !== "ref") {
+            errors.push(`${bindingLabel} must be a ref to a prior output`);
+            return;
+          }
+          const parts = refParts(binding.ref);
+          if (!parts) errors.push(`${bindingLabel}.ref must be step.output[.path]`);
+          else if (parts[0] === stepId) errors.push(`${bindingLabel} cannot depend on its own output`);
+          else findOutput(definition, parts[0], parts[1], errors, bindingLabel);
+        };
+
+        validateHumanReference(step.human.prompt, `${label}.human.prompt`);
+        if (Object.prototype.hasOwnProperty.call(step.human, "when")) {
+          validateHumanReference(step.human.when, `${label}.human.when`);
+          if (!isObject(step.human.otherwise)) {
+            errors.push(`${label}.human.otherwise must map every output to a ref when when is provided`);
+          } else {
+            const expected = Object.keys(isObject(step.outputs) ? step.outputs : {});
+            const actual = Object.keys(step.human.otherwise);
+            if (expected.length !== actual.length || expected.some((name) => !actual.includes(name))) {
+              errors.push(`${label}.human.otherwise must provide exactly the declared human outputs`);
+            }
+            for (const [outputId, binding] of Object.entries(step.human.otherwise)) {
+              validateHumanReference(binding, `${label}.human.otherwise.${outputId}`);
+            }
+          }
+        } else if (Object.prototype.hasOwnProperty.call(step.human, "otherwise")) {
+          errors.push(`${label}.human.otherwise requires human.when`);
+        }
       }
     }
 

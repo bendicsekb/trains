@@ -156,12 +156,18 @@ This explicit feedback edge replaces implicit mutable state.
 
 ## Pi execution
 
-For each car invocation, Pi starts a clean context seeded with:
+By default, each car invocation starts a clean Pi context seeded with:
 
 - the car's procedure;
 - its declared inputs;
 - the relevant outputs referenced by those inputs;
 - no undeclared sibling context or private reasoning.
+
+The root-level `session: shared` option instead keeps all invocations, including
+nested and repeated cars, in the starting session. Declared inputs and handoffs
+still govern train state; earlier conversation is also visible. This option
+applies to the whole run and cannot be changed by nested definitions. Omit it
+or set `session: fresh` to use the default clean context.
 
 Pi validates the structured handoff and passes outputs to dependent cars. A
 valid handoff or stopped loop is structural only. Semantic acceptance requires
@@ -193,6 +199,12 @@ supported runtime implementation. Specialized batch workflows may use their
 own supervisor and handoff protocols, but those are outside the generic Trains
 runtime contract.
 
+Each run starts with a repeat limit of eight iterations by default. If it blocks
+only because that limit was reached, `/train-resume` persists a four-iteration
+extension and continues from the completed nested frame. It can extend up to a
+hard limit of sixteen iterations; reaching that bound remains a blocker for
+inspection rather than silently creating an unbounded loop.
+
 ## Human steps
 
 A human step is a blocking dependency inside a running train or workflow. The
@@ -219,6 +231,31 @@ declared with `doc`. The Pi runner displays the prompt, accepts a plain-language
 answer or an explicit `/train-answer` submission, validates the declared output
 shape, and records a `human_answer` history entry before advancing dependent
 cars.
+
+Human steps may declare `when` and `otherwise` together to make input
+conditional:
+
+```yaml
+decide:
+  human:
+    prompt: {ref: teach.briefing}
+    when: {ref: teach.requires_human}
+    otherwise:
+      judgement: {ref: teach.recommended_judgement}
+  outputs:
+    judgement:
+      doc: Human judgement, or the agent recommendation when no input is needed.
+      acceptance:
+        - The result is a usable direction for the next car.
+```
+
+`when` must resolve to a boolean. `true` uses the ordinary blocking human
+boundary. `false` resolves every output from the matching `otherwise` refs,
+records a `human_skipped` event, and advances without prompting. The fallback
+keys must exactly match the declared human outputs. If `when` is omitted, the
+human step remains required; `otherwise` without `when` is invalid. This lets a
+train encode autonomous defaults while preserving explicit human checkpoints
+for decisions that need them.
 
 Humans are treated like slow, imperfect external APIs: they may respond
 partially, return arbitrary artifacts, or require several interactions before

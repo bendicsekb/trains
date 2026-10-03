@@ -6,6 +6,8 @@ import { hasActiveTeachingSession } from "../src/teaching-session.mjs";
 const STATE_ENTRY = "trains.state.v1";
 const HANDOFF_TOOL = "train_handoff";
 const DEFAULT_MAX_ITERATIONS = 8;
+const MAX_RESUMED_ITERATIONS = DEFAULT_MAX_ITERATIONS * 2;
+const REPEAT_EXTENSION = DEFAULT_MAX_ITERATIONS / 2;
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -96,6 +98,8 @@ function stepDependencies(train, step) {
   const bindings = [
     ...Object.values(step.inputs ?? {}),
     ...(step.human?.prompt ? [step.human.prompt] : []),
+    ...(step.human?.when ? [step.human.when] : []),
+    ...Object.values(step.human?.otherwise ?? {}),
   ];
   for (const binding of bindings) {
     if (bindingKind(binding) === "ref") {
@@ -234,6 +238,8 @@ export class TrainMachine {
       runId: this.id(),
       trainId: train.definition.id,
       trainPath: train.filePath,
+      session: train.definition.session ?? "fresh",
+      maxIterations: this.maxIterations,
       status: "running",
       inputs: clone(inputs),
       frames: [root],
@@ -290,7 +296,6 @@ export class TrainMachine {
             invocationInputs[inputId] = resolveReference(binding.ref, frame.values, stepState.lastOutputs, `repeat input ${inputId}`);
           }
         }
-
         stepState.status = "running";
         stepState.attempts += 1;
         const invocation = invocationId(this.state, frame, ready, iteration);
@@ -338,8 +343,8 @@ export class TrainMachine {
       return;
     }
 
-    const child = this.state.frames.pop();
-    const parent = this.currentFrame();
+    const child = frame;
+    const parent = this.state.frames[this.state.frames.length - 2];
     const returnTo = child.returnTo;
     const step = this.loadFrameTrain(parent).definition.steps[returnTo.stepId];
     const outputValues = {};
@@ -349,10 +354,59 @@ export class TrainMachine {
         outputValues[outputId] = outputs[outputId];
       } else outputValues[outputId] = resolveReference(binding.ref, child.values, outputs, `nested output ${outputId}`);
     }
-    await this.finishInvocation(parent, returnTo.stepId, returnTo.iteration, returnTo.invocation, outputValues);
+    // Keep the child frame until the parent accepts its repeat condition.
+    // A malformed child output must remain available for repair or inspection.
+    await this.finishInvocation(parent, returnTo.stepId, returnTo.iteration, returnTo.invocation, outputValues, { persist: false });
+    this.state.frames.pop();
+    this.persist();
   }
 
-  async finishInvocation(frame, stepId, iteration, invocation, outputs) {
+  async repairMissingRepeatBoolean(value) {
+    if (typeof value !== "boolean") throw new Error("Repair value must be true or false");
+    if (this.state?.status !== "blocked" || this.state.active || !/^Unable to resolve repeat\.until: missing /.test(this.state.blockedReason ?? "")) {
+      throw new Error("This train is not blocked on a missing repeat boolean");
+    }
+    const frame = this.currentFrame();
+    const parent = frame.returnTo ? this.state.frames[this.state.frames.length - 2] : frame;
+    const stepId = frame.returnTo?.stepId ?? Object.keys(parent.steps).find((id) => parent.steps[id].status === "waiting_child");
+    if (!stepId) throw new Error("No waiting repeat car was found");
+    const train = this.loadFrameTrain(parent);
+    const step = train.definition.steps[stepId];
+    const until = refParts(step.repeat?.until?.ref, { localOutput: true });
+    if (!until || until.length !== 2 || until[1] !== this.state.blockedReason.match(/missing (\w+)$/)?.[1]) {
+      throw new Error("The blocked repeat condition cannot be repaired with a boolean");
+    }
+    let outputs;
+    if (frame.returnTo) {
+      outputs = {};
+      for (const [outputId, binding] of Object.entries(step.outputs)) {
+        outputs[outputId] = outputBindingKind(binding) === "ref"
+          ? resolveReference(binding.ref, frame.values, boundaryOutputs(this.loadFrameTrain(frame), frame), `nested output ${outputId}`)
+          : boundaryOutputs(this.loadFrameTrain(frame), frame)[outputId];
+      }
+    } else {
+      const child = train.nested.get(stepId) ?? this.load(path.resolve(path.dirname(train.filePath), step.procedure.ref));
+      const final = child.finalOutputs.find((entry) => entry.outputId === until[0]);
+      const handoff = [...this.state.history].reverse().find((entry) => entry.type === "car_handoff" && entry.trainId === child.definition.id && entry.step === final?.stepId);
+      if (!handoff || !Object.prototype.hasOwnProperty.call(handoff.outputs, until[0])) throw new Error("No matching child handoff was found");
+      outputs = { [until[0]]: clone(handoff.outputs[until[0]]) };
+    }
+    if (!isObject(outputs[until[0]]) || Object.prototype.hasOwnProperty.call(outputs[until[0]], until[1])) {
+      throw new Error("The repeat result is not missing the expected boolean");
+    }
+    outputs[until[0]][until[1]] = value;
+    const invocation = parent.steps[stepId].activeInvocation;
+    if (!invocation) throw new Error("The waiting car has no active invocation");
+    await this.finishInvocation(parent, stepId, invocation.iteration, invocation.invocation, outputs, { persist: false });
+    if (frame.returnTo) this.state.frames.pop();
+    this.state.history.push({ type: "repeat_boolean_repaired", step: stepId, invocation: invocation.invocation, value, at: now() });
+    this.state.status = "running";
+    delete this.state.blockedReason;
+    this.persist();
+    await this.drive();
+  }
+
+  async finishInvocation(frame, stepId, iteration, invocation, outputs, { persist = true } = {}) {
     const train = this.loadFrameTrain(frame);
     const step = train.definition.steps[stepId];
     const stepState = frame.steps[stepId];
@@ -366,20 +420,24 @@ export class TrainMachine {
       delete stepState.activeInvocation;
       delete stepState.lastOutputs;
     } else {
-      if (iteration >= this.maxIterations) throw new Error(`Car ${stepId} exceeded maxIterations=${this.maxIterations}`);
+      const maxIterations = this.state.maxIterations ?? this.maxIterations;
+      if (iteration >= maxIterations) throw new Error(`Car ${stepId} exceeded maxIterations=${maxIterations}`);
       stepState.status = "pending";
       stepState.iteration = iteration + 1;
       stepState.lastOutputs = clone(outputs);
       delete stepState.activeInvocation;
     }
     this.state.history.push({ type: "car_handoff", trainId: train.definition.id, step: stepId, invocation, iteration, accepted, outputs: clone(outputs), at: now() });
-    this.persist();
+    if (persist) this.persist();
   }
 
   async startCar(train, frame, stepId, step, inputs) {
+    const shared = this.state.session === "shared";
     const prompt = [
       `You are executing car ${frame.scope}.${stepId} of train ${train.definition.id}.`,
-      "This is a fresh Pi context. Work only from the declared inputs below; do not assume sibling conversation context.",
+      shared
+        ? "This train uses one Pi session. Earlier cars remain in the conversation; use the declared inputs below as the current handoff and check earlier context when useful."
+        : "This is a fresh Pi context. Work only from the declared inputs below; do not assume sibling conversation context.",
       "",
       "Declared inputs (JSON):",
       safeJson(inputs),
@@ -396,6 +454,16 @@ export class TrainMachine {
       "The handoff is the only completion signal. If you are blocked, explain the blocker and do not fabricate outputs.",
     ].join("\n");
     const current = this.ctx;
+    if (shared) {
+      const sessionId = current?.sessionManager?.getSessionId?.();
+      if (!sessionId) throw new Error("Shared-session train requires an active Pi session");
+      this.state.active.sessionId = sessionId;
+      this.persist();
+      if (typeof current?.sendUserMessage === "function") await current.sendUserMessage(prompt, { expandPromptTemplates: false });
+      else if (typeof this.pi?.sendUserMessage === "function") this.pi.sendUserMessage(prompt, { expandPromptTemplates: false });
+      else throw new Error("Pi context cannot send the next car prompt");
+      return;
+    }
     if (!current?.newSession) throw new Error("Pi command context does not support newSession; run the train from an interactive Pi extension context");
     const parentSession = current.sessionManager.getSessionFile?.();
     this.state.status = "starting";
@@ -434,10 +502,34 @@ export class TrainMachine {
 
   async startHuman(train, frame, stepId, step) {
     const prompt = resolveReference(step.human.prompt.ref, frame.values, null, `human prompt ${stepId}`);
+    const active = this.state.active;
+    if (step.human.when) {
+      const shouldWait = resolveReference(step.human.when.ref, frame.values, null, `human condition ${stepId}`);
+      if (typeof shouldWait !== "boolean") throw new Error(`Human condition for ${stepId} must resolve to a boolean`);
+      if (!shouldWait) {
+        const outputs = Object.fromEntries(Object.entries(step.human.otherwise ?? {}).map(([outputId, binding]) => [
+          outputId,
+          resolveReference(binding.ref, frame.values, null, `human fallback ${stepId}.${outputId}`),
+        ]));
+        this.state.active = null;
+        this.state.history.push({
+          type: "human_skipped",
+          trainId: train.definition.id,
+          step: stepId,
+          invocation: active.invocation,
+          iteration: active.iteration,
+          conditionRef: step.human.when.ref,
+          outputs: clone(outputs),
+          at: now(),
+        });
+        await this.finishInvocation(frame, stepId, active.iteration, active.invocation, outputs);
+        return;
+      }
+    }
     this.state.status = "waiting_human";
-    this.state.active.mode = "human";
-    this.state.active.humanPrompt = clone(prompt);
-    this.state.active.humanOutputNames = Object.keys(step.outputs);
+    active.mode = "human";
+    active.humanPrompt = clone(prompt);
+    active.humanOutputNames = Object.keys(step.outputs);
     this.persist();
     this.notifyHumanRequest();
   }
@@ -601,7 +693,22 @@ export class TrainMachine {
 
   async resume() {
     if (!this.state || !["paused", "blocked"].includes(this.state.status)) throw new Error("Train is not paused or blocked");
-    if (!this.state.active) throw new Error("Train has no active car");
+    if (!this.state.active) {
+      const exhausted = this.state.blockedReason?.match(/^Car ([A-Za-z_][A-Za-z0-9_-]*) exceeded maxIterations=(\d+)$/);
+      if (!exhausted) throw new Error("Train has no active car");
+      const currentLimit = this.state.maxIterations ?? Number(exhausted[2]);
+      const hardLimit = Math.max(MAX_RESUMED_ITERATIONS, currentLimit);
+      if (currentLimit >= hardLimit) throw new Error(`Train reached its hard repeat limit of ${hardLimit}; inspect the loop before extending it`);
+      const nextLimit = Math.min(currentLimit + REPEAT_EXTENSION, hardLimit);
+      this.maxIterations = nextLimit;
+      this.state.maxIterations = nextLimit;
+      this.state.history.push({ type: "repeat_budget_extended", step: exhausted[1], previousLimit: currentLimit, newLimit: nextLimit, at: now() });
+      this.state.status = "running";
+      delete this.state.blockedReason;
+      this.persist();
+      await this.drive();
+      return;
+    }
     this.state.status = "running";
     if (this.state.active.mode === "human") {
       this.state.status = "waiting_human";
@@ -633,6 +740,7 @@ export class TrainMachine {
     return {
       runId: this.state.runId,
       trainId: this.state.trainId,
+      session: this.state.session ?? "fresh",
       status: this.state.status,
       active: this.state.active ? {
         step: this.state.active.stepId,
@@ -769,6 +877,14 @@ export function createTrainExtension(options = {}) {
       handler: async (_args, ctx) => {
         machine.attachContext(ctx);
         machine.resume();
+      },
+    });
+
+    pi.registerCommand("train-repair-repeat", {
+      description: "Repair a blocked repeat result missing one boolean: /train-repair-repeat true|false",
+      handler: async (args, ctx) => {
+        machine.attachContext(ctx);
+        await machine.repairMissingRepeatBoolean(JSON.parse(args.trim()));
       },
     });
 

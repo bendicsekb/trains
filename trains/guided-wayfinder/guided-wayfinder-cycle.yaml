@@ -6,17 +6,20 @@ steps:
       mission: {doc: The bounded destination and initial system map.}
       previous: {doc: "Optional result from the previous cycle, including its updated map and unresolved frontier."}
     procedure:
-      - Start from mission or the previous cycle's next_map and next_frontier.
-      - Explore only enough to clarify the frontier; preserve evidence, blockers, and unknowns.
+      - Start from the mission or the previous cycle's map and frontier.
+      - Gather enough evidence to clarify the frontier; record blockers and uncertainty.
+      - For each blocker, state the natural path and its smallest useful check before considering a workaround.
+      - Label material claims as known knowns (verified), known unknowns (open questions or assumptions), or unknown unknowns (relevant territory not yet checked).
     outputs:
       map:
         doc: The current low-resolution system map, updated with evidence from this exploration.
         acceptance:
-          - The map separates evidence, inference, and unknowns and stays bounded to the goal.
+          - The map separates evidence from inference, labels uncertainty, and stays within the goal.
       frontier:
-        doc: The smallest decision-relevant frontier that should be taught and judged next.
+        doc: The smallest decision-relevant frontier to resolve, with human judgement only when the autonomy policy requires it.
         acceptance:
-          - The frontier names the next decision or investigation without assuming hidden human knowledge.
+          - The frontier names the next decision or check without assuming hidden human knowledge.
+          - A blocker tests or pursues its natural path before a workaround is considered.
 
   decision:
     inputs:
@@ -40,8 +43,8 @@ steps:
       judgement: {ref: decision.judgement}
       review: {ref: decision.review}
     procedure:
-      - Turn the accepted judgement into the smallest safe fix or investigation steps.
-      - Use the accepted review as a guardrail; state what will change, how it will be checked, and what remains fog.
+      - Turn the accepted judgement or recommendation into safe steps with a check and remaining uncertainty.
+      - Pursue and verify the natural path first. Keep uncertain feasibility open until checked; use a workaround only when evidence or a concrete constraint rules out the natural path.
     outputs:
       fix_plan:
         doc: "A bounded sequence of fix or investigation steps with expected evidence, safety boundaries, and a clear next-cycle target."
@@ -55,10 +58,13 @@ steps:
       judgement: {ref: decision.judgement}
       fix_plan: {ref: fix.fix_plan}
     procedure:
-      - Execute or investigate the fix steps, verify them, and record evidence, failures, new facts, and unknowns.
-      - Set stop true only for an evidenced goal or handoff; otherwise return next_map and next_frontier.
+      - Execute the steps, run the relevant checks, and record results and remaining uncertainty.
+      - Run the full relevant test suite, lint, and build checks; fix in-scope failures without asking.
+      - Make narrow, reversible access or infrastructure changes with a clear rollback. Pause for broad security or privacy impact, hard-to-reverse changes, out-of-scope effects, or material ongoing cost.
+      - Set stop true only when the goal or handoff is evidenced; otherwise return the updated map and frontier.
     outputs:
       result:
         doc: "The verified cycle result containing outcome evidence, next_map, next_frontier, and a literal boolean stop field."
         acceptance:
-          - The result contains evidence, blockers, unknowns, next_map, next_frontier, and a boolean stop.
+          - The result records evidence, blockers, uncertainty, next_map, next_frontier, and a boolean stop.
+          - Any workaround states why the natural path is unavailable or unsuitable.

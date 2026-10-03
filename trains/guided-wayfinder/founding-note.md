@@ -21,3 +21,46 @@ The cycle repeats until the goal or a verified handoff is reached. Pi owns the e
 The human node is intentionally tiny: teaching is the prompt, the human answer is the output, and the persisted `waiting_human` state is the boundary between Pi's work and human judgement. Human answers are not trusted as automatically sufficient; the fresh review car checks whether the answer is usable and drives the retry loop when it is not.
 
 The inspiration is Matt Pocock's [Wayfinder](https://github.com/mattpocock/skills/blob/main/docs/engineering/wayfinder.md), adapted to Trains' fresh-context Pi execution and explicit handoffs.
+
+## Natural path and autonomy
+
+Captured 2026-10-03.
+
+> “I often hit what I'd describe as a roadblock, and then I fix the infra we do not choose a workaround.”
+>
+> “there should be a way that feels natural simple and elegant, and first we need to check if that works and only then start hacking around.”
+
+> “If it's on a project we've just created do whatever. If it's reversible do whatever. Human input is very expensive, be as autonomous as we can”
+
+At a blocker, separate verified facts (known knowns), specific open questions or assumptions (known unknowns), and relevant territory not yet investigated (unknown unknowns). State the simple, conventional solution an experienced engineer would try first, given the system, and its smallest useful check. Pursue and verify it when safe and in scope. Use a workaround only when evidence or a concrete constraint rules out the natural path, and record why.
+
+The goal authorizes in-scope work. Do reversible implementation and validation autonomously, including narrow project-scoped infrastructure changes with a clear rollback. Ask only when the goal leaves a consequential choice open: destructive or hard-to-reverse work, out-of-scope effects, broad security or privacy impact, material ongoing cost, or a genuine value or direction trade-off.
+
+## Issue #15: self-unblocking before escalation
+
+Captured 2026-10-03 from [ideas Issue #15](https://github.com/bendicsekb/ideas/issues/15), “Gate human escalation behind self-unblocking investigation.”
+
+> Human escalation should be a **gated recovery path, not an immediate fallback**.
+
+Before escalating a blocker, follow Issue #15's resolve-before-escalating procedure:
+
+1. Collect the relevant requirements/specs.
+2. Inspect the relevant system/context/evidence.
+3. Reconcile contradictions.
+4. Try plausible approaches.
+5. Record what was tried and what happened.
+6. Reassess whether the blocker still exists.
+
+Then classify the result:
+
+- **Unblocked** — the investigation finds a viable way forward, so the agent resumes normal work.
+- **Still investigating** — useful things remain to try, so the agent keeps working.
+- **Genuinely blocked** — the relevant investigation is exhausted and the remaining blocker is precise.
+
+> You may escalate because you are blocked only after doing the work that might prove you are not blocked.
+
+Only this state waits for a human. The handoff states the problem, requirements, attempts and results, remaining uncertainty, and judgement needed. A viable path returns to work; useful investigation stays agent-owned. Independent consequential choices may still need human judgement.
+
+> This should likely be a **generic escalation protocol at the runtime/process level**, rather than something every train author manually encodes in every workflow.
+
+The current Wayfinder applies this protocol in its teaching step before the conditional human gate. The long-term direction is a generic runtime or process rule, so each train does not need to define it again.

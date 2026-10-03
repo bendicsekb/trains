@@ -7,30 +7,51 @@ steps:
       frontier: {doc: The decision-relevant frontier to resolve.}
       previous: {doc: "Optional previous answer review and feedback."}
     procedure:
-      - Explain the system context, evidence, unknowns, options, trade-offs, and one clear question for this frontier.
-      - If previous feedback exists, teach the missing context instead of repeating the question.
+      - The user's goal authorizes in-scope work. Do reversible implementation and local checks autonomously, including narrow project-scoped infrastructure changes with a clear rollback.
+      - "Ask one consolidated question only for unresolved consequential choices: destructive or hard-to-reverse work, out-of-scope effects, broad security or privacy impact, material ongoing cost, or a genuine value or direction trade-off."
+      - Label material claims as known knowns (verified), known unknowns (open questions or assumptions), or unknown unknowns (relevant territory not yet checked).
+      - State the natural path and its smallest useful check before considering a workaround; explain any workaround with evidence or a concrete constraint.
+      - Before escalating a blocker, collect requirements, inspect evidence, reconcile contradictions, try plausible approaches, record results, and reassess.
+      - Classify the result as Unblocked, Still investigating, or Genuinely blocked. Only Genuinely blocked may trigger human input for a blocker; otherwise continue with the recommended next action.
+      - For a genuinely blocked handoff, state the precise problem, relevant requirements, attempts and results, remaining uncertainty, and judgement needed.
+      - For other frontiers, request input only for an unresolved consequential choice; otherwise recommend and pursue the next in-scope action.
+      - If previous feedback exists, address it directly.
     outputs:
       briefing:
-        doc: "A decision-ready teaching block for the human node, including any feedback-driven clarification."
+        doc: Context for the judgement or next action, including any response to earlier feedback.
         acceptance:
-          - The briefing explains the context, marks unknowns, and addresses previous feedback.
+          - The briefing labels uncertainty, explains the natural path, and addresses previous feedback.
+          - A blocker is classified; a genuinely blocked handoff includes evidence and a precise question.
+          - When input is unnecessary, give the next action without asking for approval.
+      requires_human:
+        doc: Whether this frontier requires human judgement.
+        acceptance:
+          - The value is boolean; a blocker alone requires human input only when genuinely blocked.
+      recommended_judgement:
+        doc: The next action when human input is not required.
+        acceptance:
+          - The recommendation stays in scope and names the next check and remaining uncertainty.
 
   decide:
     human:
       prompt: {ref: teach.briefing}
+      when: {ref: teach.requires_human}
+      otherwise:
+        judgement: {ref: teach.recommended_judgement}
     outputs:
       judgement:
-        doc: The human answer to the teaching block.
+        doc: The human answer or the agent's recommendation.
         acceptance:
-          - The answer is recorded exactly as returned by the human node.
+          - Human answers are recorded as given; recommendations stay within scope.
 
   assess:
     inputs:
       briefing: {ref: teach.briefing}
       judgement: {ref: decide.judgement}
     procedure:
-      - Mark accepted true only when the answer gives a relevant direction or constraint with no decision-critical ambiguity.
-      - If false, return concrete feedback; do not replace the human's judgement.
+      - Accept a human answer only when it gives a relevant direction or constraint with no decision-critical ambiguity.
+      - Accept a recommendation when it follows the goal and includes a check.
+      - If a human answer is ambiguous, return concrete feedback; do not replace the human's judgement.
     outputs:
       judgement:
         ref: decide.judgement

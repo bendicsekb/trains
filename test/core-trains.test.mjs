@@ -22,6 +22,9 @@ test("core trains are stored under trains and parse with their declared interfac
 
   assert.equal(guidedWayfinder.definition.id, "guided-wayfinder");
   assert.deepEqual(guidedWayfinder.interfaceInputs, ["goal"]);
+  const sharedWayfinder = loadTrain(path.join(repoRoot, "trains/guided-wayfinder/guided-wayfinder-shared.yaml"));
+  assert.deepEqual(sharedWayfinder.interfaceInputs, ["goal"]);
+  assert.equal(sharedWayfinder.definition.session, "shared");
   assert.ok(guidedWayfinder.nested.has("wayfind"));
   assert.deepEqual(guidedWayfinder.finalOutputs, [{ stepId: "wayfind", outputId: "result" }]);
   assert.deepEqual(Object.keys(guidedWayfinder.nested.get("wayfind").definition.steps), [
@@ -33,5 +36,7 @@ test("core trains are stored under trains and parse with their declared interfac
   const judgement = guidedWayfinder.nested.get("wayfind").nested.get("decision");
   assert.deepEqual(Object.keys(judgement.definition.steps), ["teach", "decide", "assess"]);
   assert.deepEqual(judgement.definition.steps.decide.human.prompt, { ref: "teach.briefing" });
+  assert.deepEqual(judgement.definition.steps.decide.human.when, { ref: "teach.requires_human" });
+  assert.deepEqual(judgement.definition.steps.decide.human.otherwise, { judgement: { ref: "teach.recommended_judgement" } });
   assert.equal(judgement.definition.steps.assess.outputs.result.doc.includes("accepted"), true);
 });

@@ -85,6 +85,11 @@ export class GitRepository {
     return this.run("git", args, { cwd: this.cwd });
   }
 
+  async isWorkingTree() {
+    const result = await this.tryCommand(["rev-parse", "--is-inside-work-tree"]);
+    return result.code === 0 && result.stdout.trim() === "true";
+  }
+
   async commonDir() {
     const value = await this.command(["rev-parse", "--git-common-dir"], "Unable to locate Git common directory");
     return path.resolve(this.cwd, value.trim());
@@ -336,6 +341,7 @@ export class TeachingSessionController {
   async restore(ctx = this.ctx) {
     this.attachContext(ctx);
     if (!this.git || !this.ctx?.sessionManager) return false;
+    if (!(await this.git.isWorkingTree())) return false;
     const store = await this.ensureStore();
     const restored = store.findForPiSession({
       sessionId: this.ctx.sessionManager.getSessionId?.(),

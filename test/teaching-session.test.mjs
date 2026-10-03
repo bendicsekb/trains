@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { test } from "node:test";
 
 import { TeachingSessionController } from "../src/teaching-session.mjs";
+import { createTeachingExtension } from "../extensions/teaching-session.js";
 
 function fakeTeachingContext() {
   const messages = [];
@@ -64,6 +68,26 @@ function fakeGit() {
     async commitParent(commit) { return parents.get(commit); },
   };
 }
+
+test("Pi startup outside a Git working tree skips teaching restoration", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "teaching-no-git-"));
+  try {
+    const handlers = new Map();
+    const pi = {
+      on: (event, handler) => handlers.set(event, handler),
+      registerCommand() {},
+      registerTool() {},
+    };
+    createTeachingExtension()(pi);
+    const ctx = { ...fakeTeachingContext(), cwd: directory };
+
+    await handlers.get("session_start")({}, ctx);
+    assert.equal(pi.teachingSessionController.state, null);
+    await assert.rejects(pi.teachingSessionController.start(ctx), /not a git repository/);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test("agent-owned backport preserves the old chain and rewrites checkpoint mappings", async () => {
   const git = fakeGit();

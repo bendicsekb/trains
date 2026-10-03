@@ -115,6 +115,84 @@ steps:
   assert.equal(machine.state.frames[0].values.first.result, "first-result");
 });
 
+test("shared-session train keeps nested cars and human judgement in one Pi session", async () => {
+  const directory = tempDir();
+  writeTrain(directory, "child.yaml", `
+id: child
+steps:
+  teach:
+    inputs:
+      mission: {doc: Mission.}
+    procedure:
+      - Explain the mission.
+    outputs:
+      briefing:
+        doc: Decision briefing.
+        acceptance: [The decision is explained.]
+  decide:
+    human:
+      prompt: {ref: teach.briefing}
+    outputs:
+      judgement:
+        doc: Human judgement.
+        acceptance: [The judgement is recorded.]
+  assess:
+    inputs:
+      judgement: {ref: decide.judgement}
+    procedure:
+      - Assess the judgement.
+    outputs:
+      result:
+        doc: Final assessment.
+        acceptance: [The judgement is assessed.]
+`);
+  const trainPath = writeTrain(directory, "shared.yaml", `
+id: shared
+session: shared
+steps:
+  discover:
+    inputs:
+      goal: {doc: Goal.}
+    procedure:
+      - Discover the mission.
+    outputs:
+      mission:
+        doc: Mission.
+        acceptance: [The mission is concrete.]
+  wayfind:
+    inputs:
+      mission: {ref: discover.mission}
+    procedure:
+      ref: ./child.yaml
+    outputs:
+      result: {ref: assess.result}
+`);
+  const fake = fakePiContext(directory);
+  fake.root.newSession = undefined;
+  const machine = new TrainMachine({ pi: { appendEntry() {}, sendUserMessage() {} }, id: () => "run-shared" });
+  machine.attachContext(fake.root);
+
+  await machine.start(trainPath, { goal: "Test the shared session" });
+  assert.equal(machine.status().session, "shared");
+  assert.equal(machine.state.active.sessionId, fake.root.sessionManager.getSessionId());
+  await machine.acceptHandoff({ outputs: { mission: "Map the system" }, summary: "Mapped it", evidenceRefs: [], claimsNotMade: [] });
+  await machine.onSettled();
+  assert.equal(machine.status().active.step, "teach");
+  assert.match(fake.prompts.at(-1).text, /Earlier cars remain in the conversation/);
+  await machine.acceptHandoff({ outputs: { briefing: "Choose a direction" }, summary: "Taught it", evidenceRefs: [], claimsNotMade: [] });
+  await machine.onSettled();
+  assert.equal(machine.status().status, "waiting_human");
+  await machine.acceptHumanInput("Proceed carefully");
+  assert.equal(machine.status().active.step, "assess");
+  assert.match(fake.prompts.at(-1).text, /Proceed carefully/);
+  await machine.acceptHandoff({ outputs: { result: "Accepted" }, summary: "Assessed it", evidenceRefs: [], claimsNotMade: [] });
+  await machine.onSettled();
+  assert.equal(machine.status().status, "completed");
+  assert.deepEqual(machine.state.outputs, { result: "Accepted" });
+  assert.equal(fake.sessions.length, 1);
+  assert.equal(fake.prompts.length, 3);
+});
+
 test("resume retries a blocked car that never created its worker session", async () => {
   const directory = tempDir();
   const trainPath = writeTrain(directory, "resume.yaml", `
@@ -294,7 +372,11 @@ test("guided Wayfinder retries teaching and human judgement until the review acc
   await machine.onSettled();
 
   await machine.acceptHandoff({
-    outputs: { briefing: "Teaching: these are the two boundary options and their trade-offs." },
+    outputs: {
+      briefing: "Teaching: these are the two boundary options and their trade-offs.",
+      requires_human: true,
+      recommended_judgement: "Proceed with the reversible option and verify it.",
+    },
     summary: "Taught the decision context.",
     evidenceRefs: ["test:briefing-1"],
     claimsNotMade: [],
@@ -313,7 +395,11 @@ test("guided Wayfinder retries teaching and human judgement until the review acc
   assert.equal(machine.status().active?.step, "teach");
 
   await machine.acceptHandoff({
-    outputs: { briefing: "Teaching again: option A is reversible; option B is faster but irreversible." },
+    outputs: {
+      briefing: "Teaching again: option A is reversible; option B is faster but irreversible.",
+      requires_human: true,
+      recommended_judgement: "Proceed with the reversible option and verify it.",
+    },
     summary: "Addressed the review feedback.",
     evidenceRefs: ["test:briefing-2"],
     claimsNotMade: [],
@@ -348,6 +434,71 @@ test("guided Wayfinder retries teaching and human judgement until the review acc
 
   assert.equal(machine.status().status, "completed");
   assert.ok(machine.state.history.filter((entry) => entry.type === "human_answer").length === 2);
+});
+
+test("guided Wayfinder skips human input when an in-scope reversible default is sufficient", async () => {
+  const directory = tempDir();
+  const fake = fakePiContext(directory);
+  const machine = new TrainMachine({ pi: { appendEntry() {}, sendUserMessage() {} }, id: () => "run-guided-wayfinder-autonomy" });
+  machine.attachContext(fake.root);
+
+  await machine.start(path.join(repoRoot, "trains/guided-wayfinder/guided-wayfinder.yaml"), {
+    goal: "Build the isolated prototype and verify it",
+  });
+  await machine.acceptHandoff({
+    outputs: { mission: { goal: "Build the isolated prototype and verify it", initial_map: "New isolated project" } },
+    summary: "Established the project boundary.",
+    evidenceRefs: ["test:mission"],
+    claimsNotMade: [],
+  });
+  await machine.onSettled();
+  await machine.acceptHandoff({
+    outputs: { map: "The project is new and isolated.", frontier: "Implement the local prototype and run its full local checks." },
+    summary: "Found routine, reversible work within the goal.",
+    evidenceRefs: ["test:frontier"],
+    claimsNotMade: [],
+  });
+  await machine.onSettled();
+  await machine.acceptHandoff({
+    outputs: {
+      briefing: "No human judgement is needed. I will implement the prototype and run the full local test suite.",
+      requires_human: false,
+      recommended_judgement: "Proceed with the natural path, run the full local suite, and fix in-scope failures.",
+    },
+    summary: "Applied the autonomy policy to a new isolated project.",
+    evidenceRefs: ["test:autonomy-policy"],
+    claimsNotMade: [],
+  });
+  await machine.onSettled();
+
+  assert.equal(machine.status().status, "running");
+  assert.equal(machine.status().active?.step, "assess");
+  assert.equal(machine.state.history.filter((entry) => entry.type === "human_skipped").length, 1);
+  assert.equal(machine.state.history.filter((entry) => entry.type === "human_answer").length, 0);
+
+  await machine.acceptHandoff({
+    outputs: { result: { accepted: true, feedback: "The default is in scope and its verification is explicit." } },
+    summary: "Accepted the autonomous recommendation.",
+    evidenceRefs: ["test:autonomy-review"],
+    claimsNotMade: [],
+  });
+  await machine.onSettled();
+  await machine.acceptHandoff({
+    outputs: { fix_plan: "Implement the prototype and run all relevant local checks." },
+    summary: "Planned routine project work.",
+    evidenceRefs: ["test:autonomy-fix"],
+    claimsNotMade: [],
+  });
+  await machine.onSettled();
+  await machine.acceptHandoff({
+    outputs: { result: { stop: true, next_map: "Prototype and checks complete", next_frontier: null } },
+    summary: "Verified the local goal.",
+    evidenceRefs: ["test:autonomy-complete"],
+    claimsNotMade: [],
+  });
+  await machine.onSettled();
+
+  assert.equal(machine.status().status, "completed");
 });
 
 test("replacement-session extension instance restores state before settling a car", async () => {
@@ -447,6 +598,100 @@ steps:
   assert.ok(loadTrain(parentPath).nested.has("improve"));
 });
 
+test("resume extends an exhausted repeat budget in a bounded, persisted increment", async () => {
+  const directory = tempDir();
+  const childPath = writeTrain(directory, "child.yaml", `
+id: child
+steps:
+  work:
+    inputs:
+      seed: {doc: Seed.}
+      previous: {doc: Optional previous result.}
+    procedure: [Produce a result.]
+    outputs:
+      result:
+        doc: Result.
+        acceptance: [The result is explicit.]
+`);
+  const parentPath = writeTrain(directory, "parent.yaml", `
+id: parent
+steps:
+  loop:
+    inputs:
+      seed: {doc: Seed.}
+    procedure: {ref: ./child.yaml}
+    repeat:
+      inputs:
+        previous: {ref: result}
+      until: {ref: result.stop}
+    outputs:
+      result: {ref: work.result}
+`);
+  const fake = fakePiContext(directory);
+  const machine = new TrainMachine({ pi: { appendEntry() {}, sendUserMessage() {} }, maxIterations: 1 });
+  machine.attachContext(fake.root);
+  await machine.start(parentPath, { seed: "seed" });
+  await machine.acceptHandoff({ outputs: { result: { stop: false } }, summary: "Continue the loop.", evidenceRefs: [], claimsNotMade: [] });
+  await machine.onSettled();
+
+  assert.equal(machine.state.status, "blocked");
+  assert.equal(machine.state.blockedReason, "Car loop exceeded maxIterations=1");
+  assert.equal(machine.state.frames.length, 2, "completed child frame remains available for continuation");
+
+  await machine.resume();
+  assert.equal(machine.state.maxIterations, 5, "resume adds one bounded four-iteration increment");
+  assert.ok(machine.state.history.some((entry) => entry.type === "repeat_budget_extended" && entry.newLimit === 5));
+  assert.equal(machine.status().active.step, "work");
+
+  await machine.acceptHandoff({ outputs: { result: { stop: true } }, summary: "The loop condition is satisfied.", evidenceRefs: [], claimsNotMade: [] });
+  await machine.onSettled();
+  assert.equal(machine.state.status, "completed");
+});
+
+test("missing nested repeat boolean keeps its frame and can be repaired", async () => {
+  const directory = tempDir();
+  writeTrain(directory, "child.yaml", `
+id: child
+steps:
+  work:
+    inputs:
+      seed: {doc: Seed.}
+      previous: {doc: Optional previous result.}
+    procedure: [Produce a result.]
+    outputs:
+      result:
+        doc: Result.
+        acceptance: [The result is explicit.]
+`);
+  const parentPath = writeTrain(directory, "parent.yaml", `
+id: parent
+steps:
+  loop:
+    inputs:
+      seed: {doc: Seed.}
+    procedure: {ref: ./child.yaml}
+    repeat:
+      inputs:
+        previous: {ref: result}
+      until: {ref: result.stop}
+    outputs:
+      result: {ref: work.result}
+`);
+  const fake = fakePiContext(directory);
+  const machine = new TrainMachine({ pi: { appendEntry() {}, sendUserMessage() {} } });
+  machine.attachContext(fake.root);
+  await machine.start(parentPath, { seed: "seed" });
+  await machine.acceptHandoff({ outputs: { result: { text: "pending" } }, summary: "Pending", evidenceRefs: [], claimsNotMade: [] });
+  await machine.onSettled();
+  assert.equal(machine.state.status, "blocked");
+  assert.equal(machine.state.frames.length, 2, "child frame survives the failed repeat check");
+  await machine.repairMissingRepeatBoolean(false);
+  assert.equal(machine.state.status, "running");
+  assert.equal(machine.state.frames[0].steps.loop.iteration, 2);
+  assert.equal(machine.state.frames[0].steps.loop.lastOutputs.result.stop, false);
+  assert.equal(machine.status().active.step, "work");
+});
+
 test("extension registers Pi-native commands and the terminating handoff tool", () => {
   const tools = new Map();
   const commands = new Map();
@@ -459,5 +704,5 @@ test("extension registers Pi-native commands and the terminating handoff tool", 
   assert.ok(tools.has("train_handoff"));
   assert.deepEqual(tools.get("train_handoff").parameters.required, ["outputs", "summary", "evidenceRefs", "claimsNotMade"]);
   assert.match(tools.get("train_handoff").promptGuidelines[0], /top-level summary/);
-  for (const name of ["train", "train-status", "train-answer", "train-advance", "train-steer", "train-pause", "train-resume", "train-cancel"]) assert.ok(commands.has(name), name);
+  for (const name of ["train", "train-status", "train-answer", "train-advance", "train-steer", "train-pause", "train-resume", "train-repair-repeat", "train-cancel"]) assert.ok(commands.has(name), name);
 });

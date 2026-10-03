@@ -85,7 +85,13 @@ The workflow must preserve evidence links for every extracted rule. A pattern is
 
 The book-guided slow loop is [trains/slow-loops/slow-loop.yaml](trains/slow-loops/slow-loop.yaml). It takes one engineering book or body of knowledge as input, inspects the target codebase for evidence-backed rule candidates, matches them to the book, defines tests, and implements only the justified changes. An empty candidate set or no-change result is valid when the inspection does not support an improvement.
 
-The guided Wayfinder train is [trains/guided-wayfinder/guided-wayfinder.yaml](trains/guided-wayfinder/guided-wayfinder.yaml), with its [founding note](trains/guided-wayfinder/founding-note.md). It takes only a goal and discovers the current system, blockers, constraints, and unknowns from the working tree and references. It keeps the map and fog-of-war model, but makes the loop explicit: explore, teach, ask the human, review and re-teach until the answer is sufficient, turn the judgement into fix steps, and explore again. Pi explains the decision-relevant context before asking for human judgement; the human does not need to know the whole system or specify implementation details.
+The guided Wayfinder train is [trains/guided-wayfinder/guided-wayfinder.yaml](trains/guided-wayfinder/guided-wayfinder.yaml), with its [founding note](trains/guided-wayfinder/founding-note.md). Give it a goal; it maps the system, evidence, blockers, constraints, and open questions. Each cycle explores, teaches the relevant context, gets human judgement only when needed, plans and verifies the next step, then updates the map.
+
+For the one-session experiment, use [trains/guided-wayfinder/guided-wayfinder-shared.yaml](trains/guided-wayfinder/guided-wayfinder-shared.yaml). Its `session: shared` setting keeps every car, including nested and repeated cars, in the Pi session where `/train` was started. Cars still receive their declared inputs and must call `train_handoff`; the earlier conversation is also available. The original Wayfinder keeps the default fresh session per car. Start a new Pi session for each comparison run and use the same goal:
+
+```text
+/train trains/guided-wayfinder/guided-wayfinder-shared.yaml {"goal":"..."}
+```
 
 ## Goal
 
@@ -119,6 +125,10 @@ Inside Pi, start a train with:
 /train-cancel
 ```
 
+If a bounded repeat reaches its iteration limit, `/train-resume` extends the
+persisted budget by four, up to sixteen total iterations, and continues the
+existing frame. Other blocked runs still require inspection before resuming.
+
 Teaching sessions are available through the companion extension:
 
 ```text
@@ -131,28 +141,25 @@ Teaching sessions are available through the companion extension:
 ```
 
 The extension is the state machine: it loads the lean YAML, schedules runnable
-cars, creates a fresh Pi session with `newSession()` for every invocation,
-passes only declared inputs, and advances only after the car calls the
-terminating `train_handoff` tool and Pi emits `agent_settled`; human cars
-advance after their declared answer is submitted. In RPC and replacement-session runtimes, that event queues the internal
-`/train-advance` command so the next transition re-enters through a
-command-capable context before calling `newSession()`. Complete state
-snapshots are persisted as `trains.state.v1` custom session entries, so the
-controller can reconstruct itself after a session reload. Nested procedures are
-call frames, and car-level repeats create another fresh invocation with
-explicit feedback inputs. `/train-steer` records the exact intervention in
-the same state history.
+cars, starts a fresh Pi session for each invocation by default, passes declared
+inputs, and advances after a car calls `train_handoff` and Pi emits
+`agent_settled`. A train may opt into one shared session; human cars advance
+after an answer or a configured fallback. In RPC and replacement-session
+runtimes, settlement queues `/train-advance` so the next transition can start
+from a command-capable context. Train state is persisted in `trains.state.v1`
+session entries and restored after a reload. Nested procedures use call frames;
+car repeats pass explicit feedback inputs. `/train-steer` records interventions
+in the same history.
 
 The handoff is structurally validated. YAML acceptance clauses remain
 worker-facing prose unless a deterministic verifier or human review supplies
 semantic evidence; terminal runs therefore retain a verification boundary
 instead of treating an agent assertion as independent proof.
 
-Human nodes are first-class blocking cars. A human car receives one declared
-prompt reference (usually a teaching block), persists as `waiting_human`, and
-returns its declared answer outputs when the human responds. Plain text is
-accepted for a single-output human car; `/train-answer {"output":"..."}` can
-submit named outputs explicitly.
+Human steps block by default. Add `when` and `otherwise` to ask only when a
+boolean condition is true; otherwise the declared fallback outputs are used.
+Plain text answers single-output steps; `/train-answer {"output":"..."}`
+submits named outputs.
 
 The supported runtime is the native Pi extension plus the shared YAML parser:
 

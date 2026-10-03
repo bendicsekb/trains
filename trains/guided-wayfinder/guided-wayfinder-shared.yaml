@@ -1,4 +1,5 @@
-id: guided-wayfinder
+id: guided-wayfinder-shared
+session: shared
 
 steps:
   discover:
